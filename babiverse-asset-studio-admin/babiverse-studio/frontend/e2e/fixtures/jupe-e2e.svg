@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" viewBox="0 0 200 380" width="200" height="380" onload="alert('x')">
+  <script>alert("pas de script")</script>
+  <path d="M72 220 L128 220 L146 306 L54 306 Z" fill="#336699" inkscape:label="jupe"/>
+  <path d="M72 220 L128 220 L128 228 L72 228 Z" fill="#ffcc00"/>
+  <image href="https://exemple.invalid/x.png" width="10" height="10"/>
+</svg>

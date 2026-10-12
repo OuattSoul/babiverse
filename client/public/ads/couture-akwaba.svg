@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="975" viewBox="0 0 600 975">
+  <rect width="600" height="975" fill="#8e44ad"/>
+  <g opacity="0.35">
+    <path d="M0 620 L600 520 L600 600 L0 700 Z" fill="#f1c40f"/>
+    <path d="M0 720 L600 620 L600 680 L0 780 Z" fill="#e74c3c"/>
+    <path d="M0 800 L600 700 L600 760 L0 860 Z" fill="#27ae60"/>
+  </g>
+  <g transform="translate(300 300)" fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round">
+    <circle cx="-70" cy="90" r="45"/>
+    <circle cx="70" cy="90" r="45"/>
+    <path d="M-40 55 L90 -150 M40 55 L-90 -150"/>
+  </g>
+  <text x="300" y="560" text-anchor="middle" font-family="system-ui, sans-serif" font-size="88" font-weight="900" fill="#ffffff">COUTURE</text>
+  <text x="300" y="640" text-anchor="middle" font-family="system-ui, sans-serif" font-size="60" font-weight="800" fill="#f1c40f">AKWABA</text>
+  <text x="300" y="900" text-anchor="middle" font-family="system-ui, sans-serif" font-size="38" font-weight="500" fill="#ffffff">Pagnes · Uniformes · Retouches</text>
+</svg>

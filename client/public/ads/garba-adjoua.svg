@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600">
+  <rect width="1200" height="600" fill="#e67e22"/>
+  <circle cx="1020" cy="300" r="230" fill="#f39c12"/>
+  <ellipse cx="1020" cy="330" rx="190" ry="70" fill="#ecf0f1"/>
+  <ellipse cx="1020" cy="310" rx="160" ry="50" fill="#f7dc6f"/>
+  <circle cx="960" cy="300" r="18" fill="#c0392b"/>
+  <circle cx="1060" cy="290" r="14" fill="#27ae60"/>
+  <rect x="980" y="280" width="70" height="26" rx="8" fill="#a0522d"/>
+  <text x="70" y="250" font-family="system-ui, sans-serif" font-size="110" font-weight="900" fill="#ffffff">GARBA</text>
+  <text x="70" y="350" font-family="system-ui, sans-serif" font-size="72" font-weight="800" fill="#ffffff">CHEZ ADJOUA</text>
+  <text x="70" y="440" font-family="system-ui, sans-serif" font-size="40" font-weight="500" fill="#fdebd0">Attiéké-thon bien chaud · Cité Akwaba</text>
+</svg>

@@ -1,0 +1,8 @@
+Django>=5.2,<7
+djangorestframework>=3.15,<4
+# Envoi des e-mails (confirmation d'adresse, récupération du compte)
+resend>=2.49,<3
+# PostgreSQL (recommandé hors prototype local)
+psycopg2-binary>=2.9
+# Cache partagé entre workers (limitation de débit) quand REDIS_URL est défini
+redis>=5.0

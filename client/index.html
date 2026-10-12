@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#1d1d22" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>BabiVerse</title>
+  </head>
+  <body>
+    <div id="app">
+      <div id="game"></div>
+      <div id="fade"></div>
+      <div id="joystick-zone" aria-label="Joystick"><div class="thumb"></div></div>
+
+      <nav id="cam-controls" aria-label="Caméra">
+        <button id="btn-compass" title="Remettre le nord en haut"><span id="compass-needle">▲</span></button>
+        <button id="btn-rot-left" title="Pivoter à gauche">⟲</button>
+        <button id="btn-rot-right" title="Pivoter à droite">⟳</button>
+        <button id="btn-zoom-in" title="Zoomer">＋</button>
+        <button id="btn-zoom-out" title="Dézoomer">－</button>
+      </nav>
+      <button id="btn-recenter" hidden>📍 Revenir à mon personnage</button>
+
+      <!-- Barre du haut : fréquentation · identité du jeu · compte. Visible dès l'écran de connexion. -->
+      <header id="topbar" hidden>
+        <div class="tb-side tb-left">
+          <span class="tb-stat" id="stat-players" tabindex="0" data-tip="Joueurs connectés" data-tip-pos="bottom-start" aria-label="Joueurs connectés">
+            <span aria-hidden="true">👥</span><b id="val-players">—</b>
+          </span>
+          <span class="tb-stat unknown" id="stat-visitors" tabindex="0" data-tip="Visiteurs présents : pas encore de comptage (le jeu se joue avec un compte)" data-tip-pos="bottom-start" aria-label="Visiteurs présents : pas encore de comptage">
+            <span aria-hidden="true">👀</span><b id="val-visitors">—</b>
+          </span>
+        </div>
+        <div class="tb-brand"><img class="tb-logo" src="/icon.svg" alt="" width="28" height="28" /><span class="tb-name">BabiVerse</span></div>
+        <div class="tb-side tb-right" id="tb-account"></div>
+      </header>
+
+      <!-- Sous la barre : solde, mission suivie, heure. -->
+      <div id="hud" hidden>
+        <div class="money" id="hud-money" aria-label="Solde"></div>
+        <div id="tracker" hidden></div>
+        <div class="clock"><span id="hud-clock"></span><i id="net" title="Connecté"></i></div>
+      </div>
+
+      <!-- Panneau latéral gauche : jauges (repas, énergie) et outils. Icônes seules, infobulles. -->
+      <aside id="sidebar" aria-label="Statut et outils" hidden>
+        <div class="gauge" id="gauge-food" role="img" tabindex="0" data-tip="Repas" aria-label="Repas">
+          <svg viewBox="0 0 44 44" aria-hidden="true"><circle class="track" cx="22" cy="22" r="19" /><circle class="ring" cx="22" cy="22" r="19" pathLength="100" /></svg>
+          <span aria-hidden="true">🍽️</span>
+        </div>
+        <div class="gauge" id="gauge-energy" role="img" tabindex="0" data-tip="Énergie" aria-label="Énergie">
+          <svg viewBox="0 0 44 44" aria-hidden="true"><circle class="track" cx="22" cy="22" r="19" /><circle class="ring" cx="22" cy="22" r="19" pathLength="100" /></svg>
+          <span aria-hidden="true">⚡</span>
+        </div>
+        <hr />
+        <button id="btn-journal" data-tip="Missions" aria-label="Missions"><span aria-hidden="true">📜</span><i class="count" id="missions-count" hidden></i></button>
+        <button id="btn-social" data-tip="Notifications" aria-label="Notifications"><span aria-hidden="true">🔔</span><i class="count" id="social-count" hidden></i></button>
+        <button id="btn-bag" data-tip="Mon sac" aria-label="Mon sac"><span aria-hidden="true">🎒</span></button>
+        <button id="btn-settings" data-tip="Réglages" aria-label="Réglages"><span aria-hidden="true">⚙️</span></button>
+      </aside>
+
+      <div id="prompt" hidden><kbd>E</kbd><span id="prompt-label"></span></div>
+      <button id="action-btn" hidden aria-label="Interagir">✋</button>
+      <div id="toasts" aria-live="polite"></div>
+
+      <div id="sheet-backdrop" hidden></div>
+      <section id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
+        <div class="sheet-head">
+          <div><h2 id="sheet-title"></h2><small id="sheet-subtitle"></small></div>
+          <button id="sheet-close" aria-label="Fermer">✕</button>
+        </div>
+        <div id="sheet-body"></div>
+      </section>
+
+      <nav id="main-nav" aria-label="Navigation principale" hidden>
+        <button data-nav="home"><span class="nav-icon" aria-hidden="true">🏠</span><span class="nav-label">Chez moi</span></button>
+        <button data-nav="city"><span class="nav-icon" aria-hidden="true">🗺️</span><span class="nav-label">Ville</span></button>
+        <button data-nav="opportunities"><span class="nav-icon" aria-hidden="true">🎯</span><span class="nav-label">Opportunités</span></button>
+        <button data-nav="profile"><span class="nav-icon" aria-hidden="true">👤</span><span class="nav-label">Mon profil</span></button>
+      </nav>
+
+      <div id="screen" hidden></div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

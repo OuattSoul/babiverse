@@ -1,0 +1,45 @@
+{
+  "_doc": "Annonces publicitaires de démonstration (fictives) et leur affectation aux emplacements de shared/city.json. Changer une annonce = modifier ce fichier, sans toucher à la géométrie des panneaux. Statuts d'emplacement : free, reserved, active, disabled. Lu par le client (affichage) et le serveur (location des panneaux).",
+  "adverts": {
+    "ad_garba_adjoua": {
+      "advertiser": "Garba Chez Adjoua (annonceur fictif)",
+      "title": "Garba Chez Adjoua",
+      "description": "Attiéké-thon bien chaud, piment frais et alloco tous les midis, à l'étal de la Cité Akwaba.",
+      "image": "/ads/garba-adjoua.svg",
+      "url": "https://example.com/garba-chez-adjoua",
+      "bg": "#e67e22",
+      "starts_at": "2026-01-01T00:00:00Z",
+      "ends_at": "2027-12-31T23:59:59Z",
+      "status": "active"
+    },
+    "ad_maquis_bon_coin": {
+      "advertiser": "Maquis Le Bon Coin (annonceur fictif)",
+      "title": "Maquis Le Bon Coin",
+      "description": "Poisson braisé, poulet piqué et ambiance tous les soirs dès 18 h, avenue Akwaba.",
+      "image": "/ads/maquis-bon-coin.svg",
+      "url": "https://example.com/maquis-le-bon-coin",
+      "bg": "#1e8449",
+      "starts_at": "2026-01-01T00:00:00Z",
+      "ends_at": "2027-12-31T23:59:59Z",
+      "status": "active"
+    },
+    "ad_couture_akwaba": {
+      "advertiser": "Atelier Couture Akwaba (annonceur fictif)",
+      "title": "Atelier Couture Akwaba",
+      "description": "Pagnes, uniformes et retouches en 48 h. Sur mesure pour les fêtes et les cérémonies.",
+      "image": "/ads/couture-akwaba.svg",
+      "url": "https://example.com/atelier-couture-akwaba",
+      "bg": "#8e44ad",
+      "starts_at": "2026-01-01T00:00:00Z",
+      "ends_at": "2027-12-31T23:59:59Z",
+      "status": "active"
+    }
+  },
+  "placements": {
+    "pub_avenue_ouest": { "status": "active", "ad": "ad_garba_adjoua" },
+    "pub_avenue_est": { "status": "active", "ad": "ad_maquis_bon_coin" },
+    "pub_place_totem": { "status": "active", "ad": "ad_couture_akwaba" },
+    "pub_place": { "status": "free" },
+    "pub_rue2": { "status": "free" }
+  }
+}

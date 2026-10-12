@@ -1,0 +1,201 @@
+{
+  "_doc": "Données de la ville partagées par le serveur (règles, validation) et le client (rendu). Ne pas dupliquer ailleurs. Les emplacements publicitaires ne décrivent que le support physique ; les annonces affichées vivent dans shared/ads.json.",
+  "plot_price": 15000,
+  "max_plots_per_player": 1,
+  "residential": {
+    "_doc": "Lotissement : zone des maisons initiales, attribuées automatiquement (une par joueur). Emplacement n : bloc n // lots_par_bloc, empilé au sud du précédent ; dans un bloc, rangées de gauche à droite puis du nord au sud. Un bloc n'est ouvert que lorsque les précédents sont pleins ; les maisons existantes ne bougent jamais.",
+    "name": "Lotissement Akwaba",
+    "x": 43,
+    "y": 40,
+    "w": 64,
+    "h": 64,
+    "lot": 2,
+    "template": "maisonnette",
+    "facing": "S"
+  },
+  "plots": [
+    {
+      "id": "P01",
+      "x": 2,
+      "y": 2,
+      "w": 6,
+      "h": 5,
+      "front": "S"
+    },
+    {
+      "id": "P02",
+      "x": 23,
+      "y": 2,
+      "w": 6,
+      "h": 5,
+      "front": "S"
+    },
+    {
+      "id": "P03",
+      "x": 30,
+      "y": 2,
+      "w": 6,
+      "h": 5,
+      "front": "S"
+    },
+    {
+      "id": "P04",
+      "x": 43,
+      "y": 6,
+      "w": 5,
+      "h": 5,
+      "front": "S"
+    },
+    {
+      "id": "P05",
+      "x": 49,
+      "y": 6,
+      "w": 5,
+      "h": 5,
+      "front": "S"
+    },
+    {
+      "id": "P06",
+      "x": 43,
+      "y": 18,
+      "w": 5,
+      "h": 4,
+      "front": "N"
+    },
+    {
+      "id": "P07",
+      "x": 49,
+      "y": 18,
+      "w": 5,
+      "h": 4,
+      "front": "N"
+    },
+    {
+      "id": "P08",
+      "x": 9,
+      "y": 33,
+      "w": 6,
+      "h": 5,
+      "front": "N"
+    },
+    {
+      "id": "P09",
+      "x": 23,
+      "y": 33,
+      "w": 5,
+      "h": 5,
+      "front": "N"
+    },
+    {
+      "id": "P10",
+      "x": 31,
+      "y": 33,
+      "w": 5,
+      "h": 5,
+      "front": "N"
+    },
+    {
+      "id": "P11",
+      "x": 43,
+      "y": 32,
+      "w": 5,
+      "h": 6,
+      "front": "N"
+    },
+    {
+      "id": "P12",
+      "x": 49,
+      "y": 32,
+      "w": 5,
+      "h": 6,
+      "front": "N",
+      "status": "unavailable",
+      "reason": "Réservée par la mairie pour un futur marché de quartier."
+    }
+  ],
+  "ad_slots": [
+    {
+      "id": "pub_avenue_ouest",
+      "x": 15,
+      "y": 11,
+      "facing": "S",
+      "support": "billboard",
+      "w": 2,
+      "board": {
+        "w": 1.9,
+        "h": 0.95
+      }
+    },
+    {
+      "id": "pub_place",
+      "x": 35,
+      "y": 17,
+      "facing": "N",
+      "support": "billboard",
+      "w": 2,
+      "board": {
+        "w": 1.9,
+        "h": 0.95
+      }
+    },
+    {
+      "id": "pub_avenue_est",
+      "x": 52,
+      "y": 11,
+      "facing": "S",
+      "support": "billboard",
+      "w": 2,
+      "board": {
+        "w": 1.9,
+        "h": 0.95
+      }
+    },
+    {
+      "id": "pub_rue2",
+      "x": 28,
+      "y": 31,
+      "facing": "N",
+      "support": "billboard",
+      "w": 2,
+      "board": {
+        "w": 1.9,
+        "h": 0.95
+      }
+    },
+    {
+      "id": "pub_place_totem",
+      "x": 29,
+      "y": 18,
+      "facing": "S",
+      "support": "totem",
+      "w": 1,
+      "board": {
+        "w": 0.8,
+        "h": 1.3
+      }
+    }
+  ],
+  "ad_rental": {
+    "price": 2000,
+    "duration_hours": 72,
+    "passive_bonus_units_per_hour": 1
+  },
+  "player_buildings": {
+    "maisonnette": {
+      "name": "Maisonnette",
+      "facade": "HD",
+      "roof": "o",
+      "interior": "house",
+      "cost": 10000,
+      "sign": false
+    },
+    "boutique": {
+      "name": "Petite boutique",
+      "facade": "YD",
+      "roof": "g",
+      "interior": "shop",
+      "cost": 18000,
+      "sign": true
+    }
+  }
+}
