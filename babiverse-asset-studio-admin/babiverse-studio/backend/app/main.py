@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import auth, bundle, config, gamepack, gameworld, media as md, runtime, service
 from .behaviors import BEHAVIORS
-from .db import connect, get_setting, schema_version
+from .db import connect, get_setting, recover, schema_version
 from .models import (CategoryIn, CategoryPatch, ChannelAssignIn, CreateAssetIn, DuplicateIn, ExportIn, GameSettingsIn, ImportApplyIn, LoginIn,
                      LogoutIn, MediaPatch, MigrateIn, MovePatch, PasswordIn, PlaceIn, PlacementIn, PublishInhabitantsIn, RemovalIn, RevertIn, SceneIn, ScenePatch, UpdateDraftIn,
                      UserIn, UserPatch)
@@ -50,7 +50,9 @@ def create_app(db_path: str | None = None, with_content: bool = True) -> FastAPI
     service.CONTEXT.update({"settings": settings})
     with _lock:
         seed(conn, settings, with_content=with_content)
-    service.CONTEXT["secret"] = settings.secret or get_setting(conn, "secret")
+    secret = settings.secret or get_setting(conn, "secret")
+    conn.commit()
+    service.CONTEXT["secret"] = secret
 
     app = FastAPI(title="Babiverse Asset Studio — Cité Akwaba", version=bundle.STUDIO_VERSION,
                   docs_url=None if settings.production else "/api/docs", redoc_url=None, openapi_url=None if settings.production else "/api/openapi.json")
@@ -60,7 +62,7 @@ def create_app(db_path: str | None = None, with_content: bool = True) -> FastAPI
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
         # chaque requête retrouve le contexte de CETTE application (plusieurs apps coexistent dans les tests)
-        service.CONTEXT.update({"settings": settings, "secret": settings.secret or get_setting(conn, "secret")})
+        service.CONTEXT.update({"settings": settings, "secret": secret})
         resp = await call_next(request)
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("X-Frame-Options", "DENY")
@@ -89,8 +91,17 @@ def create_app(db_path: str | None = None, with_content: bool = True) -> FastAPI
         return JSONResponse(status_code=500, content={"detail": "Erreur interne du serveur. L'opération n'a pas été enregistrée."})
 
     def db():
+        # chaque requête se termine par un commit (ou un rollback si elle échoue) : sous PostgreSQL,
+        # une lecture ouvre aussi une transaction qu'il ne faut pas laisser en suspens
         with _gate:
-            yield app.state.conn
+            c = app.state.conn
+            recover(c)
+            try:
+                yield c
+            except BaseException:
+                c.rollback()
+                raise
+            c.commit()
 
     def bearer(authorization: str = Header(default="")) -> str:
         if not authorization.lower().startswith("bearer "):
@@ -134,8 +145,10 @@ def create_app(db_path: str | None = None, with_content: bool = True) -> FastAPI
                 total += sum(os.path.getsize(os.path.join(root, f)) for f in files)
             return total
         return {"env": settings.env, "production": settings.production, "schema_version": schema_version(conn),
-                "db_path": settings.db_path if not settings.production else os.path.basename(settings.db_path),
-                "media_bytes": du(settings.media_dir), "limits": {"upload_mb": settings.max_upload_bytes // 1048576,
+                "db_path": settings.db_label, "db_engine": "postgresql" if settings.postgres else "sqlite",
+                "media_storage": settings.media_storage,
+                "media_bytes": int(conn.execute("SELECT COALESCE(SUM(LENGTH(data)), 0) FROM media_blobs").fetchone()[0])
+                if settings.media_storage == "database" else du(settings.media_dir), "limits": {"upload_mb": settings.max_upload_bytes // 1048576,
                 "import_mb": settings.max_import_bytes // 1048576, "image_px": settings.max_image_px},
                 "sessions": {"hours": settings.session_hours, "idle_min": settings.session_idle_min},
                 "dev_accounts": settings.dev_accounts, "version": bundle.STUDIO_VERSION,
@@ -615,4 +628,5 @@ def create_app(db_path: str | None = None, with_content: bool = True) -> FastAPI
 
 
 if os.environ.get("BABIVERSE_NO_AUTOAPP") != "1":
+    config.load_env_file()
     app = create_app()

@@ -29,7 +29,7 @@ from . import media as md
 from .db import audit, tx
 from .models import AssetDefinition
 from .refs import asset_refs, media_refs, remap
-from .service import CONTEXT, ServiceError, _validate, get_asset_row, world_state
+from .service import CONTEXT, ServiceError, _validate, get_asset_row, read_file, store_file, world_state
 from .taxonomy import CATEGORY_BY_KEY, FAMILIES, reload as reload_categories
 
 FORMAT = "babiverse-studio-bundle"
@@ -132,7 +132,7 @@ def export_bundle(conn, user, asset_ids: list[str], all_assets: bool, include_de
                 ext = "svg" if r["mime"] == "image/svg+xml" else md.RASTER.get(r["mime"], "bin")
                 name = f"media/{r['sha256']}.{ext}"
                 if name not in z.namelist():
-                    z.writestr(name, md.read(CONTEXT["settings"].media_dir, r["sha256"], r["mime"]))
+                    z.writestr(name, read_file(conn, r["sha256"], r["mime"]))
                 entry["revisions"].append({"revision": rev, "sha256": r["sha256"], "mime": r["mime"], "filename": r["filename"], "file": name})
             manifest["media"].append(entry)
         for key in sorted(cats):
@@ -378,7 +378,7 @@ def apply(conn, user, import_id: str, decisions: dict[str, str], import_scenes: 
             stored = []
             for r in m["revisions"]:
                 info = r["info"]
-                sha, _ = md.store(s.media_dir, info["data"], info["ext"])
+                sha = store_file(conn, info["data"], info["ext"])
                 stored.append((r, info, sha, json.dumps(info["meta"], ensure_ascii=False), md.safe_filename(r.get("filename", "fichier"))))
             r, info, sha, meta, fname = stored[-1]  # la ligne du média décrit la dernière révision
             conn.execute("INSERT INTO media (id, name, filename, kind, mime, size, sha256, width, height, meta, tags, category, revision, archived, created_by, created_at, updated_at) "

@@ -29,18 +29,19 @@ export async function run() {
   const b = await session('social-b', { desktop: true, args: MEDIA });
   const check = a.check;
   try {
-    await a.createCharacter('Awa', 'etudiant');
-    await b.createCharacter('Bakary', 'salarie');
+    // noms d'utilisateur (= noms des personnages) uniques : awa… et bakary…
+    const A = await a.createCharacter('awa', 'etudiant');
+    const B = await b.createCharacter('bakary', 'salarie');
     const pa = await meet(a);
     await meet(b, pa);
 
     // --- Présence et barre de proximité -----------------------------------------------
-    check('Awa voit Bakary dans la ville', await until(a.page, () => window.__babi.world.remotes.list().some((p) => p.name === 'Bakary')));
-    check('Bakary voit Awa', await until(b.page, () => window.__babi.world.remotes.list().some((p) => p.name === 'Awa')));
+    check('Awa voit Bakary dans la ville', await until(a.page, (n) => window.__babi.world.remotes.list().some((p) => p.name === n), B));
+    check('Bakary voit Awa', await until(b.page, (n) => window.__babi.world.remotes.list().some((p) => p.name === n), A));
     check('Barre de proximité affichée (Awa)', await until(a.page, () => !document.getElementById('social-bar').hidden));
     const labels = await a.page.$$eval('#social-bar .soc-act', (n) => n.map((x) => x.textContent));
     check('Barre : Chatter, Appeler, Ajouter ami', labels.join('|') === '💬Chatter|📞Appeler|🤝Ajouter ami', labels.join('|'));
-    check('Barre au nom du joueur proche', (await a.page.textContent('#social-bar .soc-who')).includes('Bakary'));
+    check('Barre au nom du joueur proche', (await a.page.textContent('#social-bar .soc-who')).includes(B));
     const bar = await a.page.locator('#social-bar').boundingBox();
     const joy = await a.page.locator('#joystick-zone').boundingBox();
     check('Téléphone : la barre ne chevauche pas le joystick', bar.y + bar.height <= joy.y + 1, `${bar.y + bar.height} / ${joy.y}`);
@@ -52,14 +53,14 @@ export async function run() {
     // --- Discussion : ignorée, puis acceptée depuis 🔔 ----------------------------------
     await a.page.click('#social-bar .soc-act.chat');
     check('Bakary reçoit la demande de discussion', await until(b.page, () => !document.getElementById('social-incoming').hidden));
-    check('Texte de la demande', (await b.page.textContent('#social-incoming')).includes('Awa veut discuter avec toi'));
+    check('Texte de la demande', (await b.page.textContent('#social-incoming')).includes(`${A} veut discuter avec toi`));
     check('Badge 🔔 non lu', await until(b.page, () => document.getElementById('social-count').textContent === '1'));
     await b.shot('01-demande-recue');
     await b.page.click('#social-incoming .soc-x');
     check('Ignorée : la carte disparaît', await until(b.page, () => document.getElementById('social-incoming').hidden));
     check('Ignorée : plus de badge (lue)', await until(b.page, () => document.getElementById('social-count').hidden));
     await b.page.click('#btn-social');
-    const row = b.page.locator('.soc-row', { hasText: 'Awa veut discuter avec toi' });
+    const row = b.page.locator('.soc-row', { hasText: `${A} veut discuter avec toi` });
     check('Ignorée : toujours dans 🔔, marquée lue', (await row.count()) === 1 && !(await row.getAttribute('class')).includes('unread'));
     await b.shot('02-notifications');
     await row.locator('button.primary').click();
@@ -85,20 +86,20 @@ export async function run() {
 
     // --- Appel sans réponse : manqué après 30 s, puis rappel ---------------------------
     await a.page.click('#social-bar .soc-act.call');
-    check('Awa : écran « Appel vers Bakary… »', await until(a.page, () => document.getElementById('call-panel').textContent.includes('Appel vers Bakary')));
+    check('Awa : écran « Appel vers Bakary… »', await until(a.page, (n) => document.getElementById('call-panel').textContent.includes(`Appel vers ${n}`), B));
     check('Bakary : ça sonne (Décrocher / Refuser)', await until(b.page, () => !!document.getElementById('call-accept')));
     await b.shot('03-appel-entrant');
     check('Sonnerie arrêtée après 30 s (Bakary)', await until(b.page, () => document.getElementById('call-panel').hidden, null, 40000));
     check('Awa : écran d\'appel fermé', await until(a.page, () => document.getElementById('call-panel').hidden, null, 10000));
     await b.page.click('#btn-social');
-    const missed = b.page.locator('.soc-row', { hasText: 'Appel manqué de Awa' });
+    const missed = b.page.locator('.soc-row', { hasText: `Appel manqué de ${A}` });
     check('Appel manqué gardé dans 🔔 avec « Rappeler »', (await missed.count()) === 1 && (await missed.locator('button', { hasText: 'Rappeler' }).count()) === 1);
     await b.shot('04-appel-manque');
     await missed.locator('button', { hasText: 'Rappeler' }).click();
     check('Awa reçoit le rappel', await until(a.page, () => !!document.getElementById('call-accept')));
     await a.page.click('#call-accept');
-    check('En ligne des deux côtés', await until(a.page, () => document.getElementById('call-panel').textContent.includes('En ligne avec Bakary'))
-      && await until(b.page, () => document.getElementById('call-panel').textContent.includes('En ligne avec Awa')));
+    check('En ligne des deux côtés', await until(a.page, (n) => document.getElementById('call-panel').textContent.includes(`En ligne avec ${n}`), B)
+      && await until(b.page, (n) => document.getElementById('call-panel').textContent.includes(`En ligne avec ${n}`), A));
     check('Liaison audio établie (WebRTC)', await until(a.page, () => window.__babi.social.voice?.pc.connectionState === 'connected', null, 30000),
       await a.page.evaluate(() => window.__babi.social.voice?.pc.connectionState));
     await a.shot('03-en-ligne');

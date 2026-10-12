@@ -24,12 +24,16 @@ PACK = {
     "format": "babiverse-game-pack", "format_version": 1, "revision": "abc123", "frame": [0, 0, 200, 380],
     "parts": {}, "inhabitants": [], "npcs": [], "home": None,
     "wardrobe": {
-        "bodies": [entry("corps-h", "body"), entry("corps-f", "body")],
+        "bodies": [entry("corps-h", "body", gender="male"), entry("corps-f", "body", gender="female")],
         "slots": {
             "hair": [entry("afro", "hair", game_hint="afro"), entry("chignon", "hair", bodies=["corps-f"], game_hint="short")],
             "top": [entry("tshirt", "top", default_colors={"primary": "#2980b9"})],
             "bottom": [entry("jean", "bottom"), entry("pagne", "bottom", palette={"primary": ["#e67e22", "#c0392b"]})],
-            "shoes": [entry("baskets", "shoes")],
+            "shoes": [entry("baskets", "shoes"), entry("talons", "shoes", genders=["female"])],
+            "dress": [entry("robe", "dress", genders=["female"])],
+            "headwear": [entry("casquette", "headwear")],
+            "makeup": [entry("rouge", "makeup", genders=["female"])],
+            "beard": [entry("barbe", "beard", genders=["male"])],
         },
         "face": {"corps-h": {"eyes": "yeux", "eyebrows": "sourcils", "nose": "nez", "mouth": "bouche"},
                  "corps-f": {"eyes": "yeux", "eyebrows": None, "nose": "nez", "mouth": "bouche"}},
@@ -118,6 +122,32 @@ class AtelierPackTests(AtelierBase):
         look = self.new_char({"body": "inconnu", "layers": {"top": {"part": "tshirt"}, "bottom": {"part": "jean"}}}, name="Awa")
         self.assertNotIn("studio", look)
         self.assertEqual(look["skin"], "#c68642")
+
+    def test_accessories_kept_and_gender_reserved_parts_dropped(self):
+        self.write_pack()
+        look = self.new_char({"body": "corps-h", "layers": {
+            "top": {"part": "tshirt"}, "bottom": {"part": "jean"}, "headwear": {"part": "casquette"},
+            "beard": {"part": "barbe"}, "makeup": {"part": "rouge"}, "shoes": {"part": "talons"},  # réservés aux femmes
+        }})
+        layers = look["studio"]["layers"]
+        self.assertEqual(layers["headwear"]["part"], "casquette")
+        self.assertEqual(layers["beard"]["part"], "barbe")
+        self.assertNotIn("makeup", layers)
+        self.assertNotIn("shoes", layers)
+        look = self.new_char({"body": "corps-f", "layers": {
+            "dress": {"part": "robe"}, "top": {"part": "tshirt"}, "makeup": {"part": "rouge"},
+            "shoes": {"part": "talons"}, "beard": {"part": "barbe"},  # réservée aux hommes
+        }}, name="Awa")
+        layers = look["studio"]["layers"]
+        # une robe suffit (elle remplace haut et bas)
+        self.assertEqual(layers["dress"]["part"], "robe")
+        self.assertNotIn("top", layers)
+        self.assertEqual(layers["makeup"]["part"], "rouge")
+        self.assertEqual(layers["shoes"]["part"], "talons")
+        self.assertNotIn("beard", layers)
+        # une robe portée par une silhouette masculine est écartée : sans haut ni bas, apparence classique
+        look = self.new_char({"body": "corps-h", "layers": {"dress": {"part": "robe"}}}, name="Yao")
+        self.assertNotIn("studio", look)
 
     def test_without_pack_studio_look_is_ignored(self):
         look = self.new_char({"body": "corps-h", "layers": {"top": {"part": "tshirt"}, "bottom": {"part": "jean"}}})

@@ -1,0 +1,76 @@
+# Blueprint Render — les deux backends de BabiVerse, plan gratuit (voir docs/DEPLOIEMENT.md).
+# Les fronts sont sur Vercel (client/vercel.json, atelier frontend/vercel.json) et appellent ces services
+# par une redirection /api/* : pas de CORS, même origine pour le navigateur.
+#
+# Base de données : l'instance PostgreSQL existante « babi_verse_db » (Oregon) n'est pas décrite ici.
+# Au premier déploiement, Render demande les valeurs « sync: false » : coller les URL INTERNES de la base
+# (page de la base > Connections > Internal Database URL) :
+#   - jeu     : .../babi_verse_db
+#   - atelier : .../babiverse_studio  (base créée dans la même instance : CREATE DATABASE babiverse_studio)
+services:
+  # ------------------------------------------------------------------ jeu (Django)
+  - type: web
+    name: babiverse-api
+    runtime: python
+    plan: free
+    region: oregon              # même région que la base : URL interne utilisable
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
+    # pas de « pre-deploy » en gratuit : les migrations passent au démarrage
+    startCommand: python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60
+    # pas de healthCheckPath : la sonde de Render peut arriver avec un en-tête Host refusé par ALLOWED_HOSTS
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.7
+      - key: DATABASE_URL
+        sync: false
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "0"
+      - key: DJANGO_ALLOWED_HOSTS     # le nom xxx.onrender.com est ajouté automatiquement (RENDER_EXTERNAL_HOSTNAME)
+        value: localhost
+      - key: PUBLIC_URL               # adresse Vercel du jeu (liens des e-mails), ex. https://babiverse.vercel.app
+        sync: false
+      - key: RESEND_API_KEY           # obligatoire en production (le serveur refuse de démarrer sans)
+        sync: false
+      - key: DEFAULT_FROM_EMAIL       # expéditeur d'un domaine vérifié dans Resend
+        value: BabiVerse <onboarding@resend.dev>
+      - key: ATELIER_URL              # adresse publique de l'atelier ci-dessous (à corriger si Render en attribue une autre)
+        value: https://babiverse-atelier-api.onrender.com
+      - key: ATELIER_KEY
+        fromService:
+          type: web
+          name: babiverse-atelier-api
+          envVarKey: BABIVERSE_GAME_KEY
+      - key: ATELIER_CACHE_S          # l'atelier gratuit s'endort : on l'interroge moins souvent
+        value: "60"
+
+  # ------------------------------------------------------------------ atelier d'assets (FastAPI)
+  - type: web
+    name: babiverse-atelier-api
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: babiverse-asset-studio-admin/babiverse-studio/backend
+    buildCommand: pip install -r requirements.txt
+    # premier démarrage ≈ 1 à 2 min (création du schéma et de la bibliothèque de départ)
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips "*"
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.7
+      - key: BABIVERSE_ENV
+        value: production
+      - key: BABIVERSE_DATABASE_URL
+        sync: false
+      - key: BABIVERSE_MEDIA_STORAGE  # disque effacé à chaque redémarrage en gratuit : fichiers en base
+        value: database
+      - key: BABIVERSE_SECRET
+        generateValue: true
+      - key: BABIVERSE_GAME_KEY       # clé partagée avec le jeu (ATELIER_KEY)
+        generateValue: true
+      - key: BABIVERSE_ADMIN_USER     # administrateur créé au premier démarrage
+        sync: false
+      - key: BABIVERSE_ADMIN_PASSWORD # ≥ 12 caractères
+        sync: false

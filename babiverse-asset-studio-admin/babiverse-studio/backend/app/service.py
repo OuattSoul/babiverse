@@ -151,7 +151,8 @@ def list_assets(conn, q: str = "", category: str = "", family: str = "", status:
 def usage(conn, asset_id: str) -> dict:
     """Où l'asset est utilisé : instances par scène et par version, assets qui le référencent."""
     inst = conn.execute("SELECT i.scene_id, i.version, COUNT(*) AS n, s.name AS scene_name FROM instances i "
-                        "LEFT JOIN scenes s ON s.id = i.scene_id WHERE i.asset_id = ? GROUP BY i.scene_id, i.version",
+                        "LEFT JOIN scenes s ON s.id = i.scene_id WHERE i.asset_id = ? GROUP BY i.scene_id, i.version, s.name "
+                        "ORDER BY i.scene_id, i.version",
                         (asset_id,)).fetchall()
     refs = []
     for row in conn.execute("SELECT a.id, a.technical_name, a.family, a.archived, a.published_version, a.latest_version, v.version, v.definition, v.status "
@@ -766,7 +767,7 @@ def upload_media(conn, user, data: bytes, filename: str, name: str | None = None
         info = md.inspect(data, filename, s.max_upload_bytes, s.max_image_px)
     except md.MediaError as exc:
         raise ServiceError(422, str(exc)) from exc
-    sha, _ = md.store(s.media_dir, info["data"], info["ext"])
+    sha = store_file(conn, info["data"], info["ext"])
     mid = media_id or f"m-{uuid.uuid4().hex[:16]}"
     now = _now()
     fname = md.safe_filename(filename)
@@ -797,7 +798,7 @@ def replace_media(conn, user, media_id: str, data: bytes, filename: str) -> dict
         raise ServiceError(422, str(exc)) from exc
     if info["kind"] != m["kind"]:
         raise ServiceError(422, "Le fichier de remplacement doit être du même type (SVG ou image matricielle).")
-    sha, _ = md.store(s.media_dir, info["data"], info["ext"])
+    sha = store_file(conn, info["data"], info["ext"])
     rev = m["revision"] + 1
     now = _now()
     fname = md.safe_filename(filename)
@@ -817,7 +818,7 @@ def assign_channels(conn, user, media_id: str, mapping: dict[str, str]) -> dict:
     if m["kind"] != "svg":
         raise ServiceError(422, "Seuls les SVG peuvent recevoir des canaux de couleur.")
     s = CONTEXT["settings"]
-    svg = md.read(s.media_dir, m["sha256"], m["mime"]).decode("utf-8")
+    svg = read_file(conn, m["sha256"], m["mime"]).decode("utf-8")
     try:
         res = svgsafe.assign_channels(svg, mapping)
     except svgsafe.SvgError as exc:
@@ -860,11 +861,31 @@ def media_revisions(conn, media_id: str) -> list[dict]:
             for r in conn.execute("SELECT * FROM media_revisions WHERE media_id=? ORDER BY revision DESC", (media_id,))]
 
 
+def store_file(conn, data: bytes, ext: str) -> str:
+    """Range le contenu (sur disque ou en base selon `media_storage`) ; retourne son empreinte."""
+    s = CONTEXT["settings"]
+    if s.media_storage == "database":
+        sha = md.sha256(data)
+        conn.execute("INSERT INTO media_blobs (sha256, data) VALUES (?, ?) ON CONFLICT DO NOTHING", (sha, data))
+        return sha
+    return md.store(s.media_dir, data, ext)[0]
+
+
+def read_file(conn, sha: str, mime: str) -> bytes:
+    s = CONTEXT["settings"]
+    if s.media_storage == "database":
+        row = conn.execute("SELECT data FROM media_blobs WHERE sha256=?", (sha,)).fetchone()
+        if not row:
+            raise ServiceError(404, "Fichier introuvable dans la base.")
+        return bytes(row["data"])
+    return md.read(s.media_dir, sha, mime)
+
+
 def media_file(conn, media_id: str, revision: int) -> tuple[bytes, str]:
     r = conn.execute("SELECT * FROM media_revisions WHERE media_id=? AND revision=?", (media_id, revision)).fetchone()
     if not r:
         raise ServiceError(404, "Révision introuvable.")
-    return md.read(CONTEXT["settings"].media_dir, r["sha256"], r["mime"]), r["mime"]
+    return read_file(conn, r["sha256"], r["mime"]), r["mime"]
 
 
 def svg_text(conn, media_id: str, revision: int | None = None) -> str | None:

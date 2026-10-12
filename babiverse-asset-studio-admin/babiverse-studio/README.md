@@ -46,12 +46,22 @@ Au premier démarrage, la base est créée et remplie avec un **kit de départ p
 
 Comptes de **développement** (créés seulement hors production, mot de passe = identifiant) : `admin`, `editeur`, `publieur`, `lecteur`, `joueur`. En production, aucun compte de développement n'est créé (voir [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md)).
 
-Base : `backend/babiverse.db` (SQLite) ; fichiers importés : `backend/media/` (hors base). Les deux se règlent par `BABIVERSE_DB` et `BABIVERSE_MEDIA_DIR`.
+Base : **PostgreSQL** dès que `BABIVERSE_DATABASE_URL` est défini (variable d'environnement ou fichier `backend/.env`, non versionné) ; sinon `backend/babiverse.db` (SQLite). Fichiers importés : `backend/media/` (hors base, `BABIVERSE_MEDIA_DIR`).
+
+```bash
+# PostgreSQL en local (même serveur que le jeu ; LOCALE 'C' = même ordre de tri que SQLite)
+psql -U babiverse -d postgres -c "CREATE DATABASE babiverse_studio TEMPLATE template0 ENCODING 'UTF8' LOCALE 'C'"
+echo "BABIVERSE_DATABASE_URL=postgres://babiverse:<mot de passe>@localhost:5432/babiverse_studio" > backend/.env
+# reprendre une base SQLite existante (cible vide ; la source n'est pas modifiée)
+cd backend && .venv/Scripts/python -m app.copy_to_postgres
+```
 
 ## 2. Tests
 
 ```bash
-cd backend  && .venv/Scripts/python -m pytest       # 45 tests
+cd backend  && .venv/Scripts/python -m pytest       # 58 tests (SQLite)
+# mêmes tests sur PostgreSQL (rôle avec CREATEDB ; une base par test, supprimée à la fin)
+BABIVERSE_TEST_DATABASE_URL=postgres://babiverse:<mdp>@localhost:5432/postgres .venv/Scripts/python -m pytest
 cd frontend && npm test                             # 31 tests (Vitest)
 cd frontend && npm run build && npm run e2e         # 20 étapes de bout en bout (Chrome + playwright-core)
 ```

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.taxonomy import KITS
 
-from .conftest import Api
+from .conftest import Api, new_db
 
 SVG_BUILDING = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280"><rect x="30" y="210" width="140" height="60" style="fill:var(--babi-primary,#eeddcc)"/></svg>'
 
@@ -125,7 +125,7 @@ def test_modular_placement_runtime_and_roundtrip(api, tmp_path):
     manifest = json.loads(zipfile.ZipFile(io.BytesIO(r.content)).read("manifest.json"))
     exported = {a["asset_id"] for a in manifest["assets"]}
     assert {gbaka, tid(api, "kit-vehicle-minibus"), tid(api, "kit-vehicle-bagages"), tid(api, "kit-vehicle-galerie")} <= exported
-    other = create_app(str(tmp_path / "other.db"), with_content=False)
+    other = create_app(new_db(tmp_path, "other.db"), with_content=False)
     with TestClient(other) as client:
         api2 = Api(client)
         prev = api2.upload("publieur", "/api/imports", r.content, filename="lot.zip").json()

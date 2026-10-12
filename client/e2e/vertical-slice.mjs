@@ -11,7 +11,6 @@ export async function run() {
     await s.shot('00-connexion');
     await s.signUp();
     await s.shot('01-creation');
-    await page.fill('#char-name', 'Kouadio');
     await page.click('[data-profile="etudiant"]');
     await page.click('#btn-start');
     await page.waitForFunction(() => window.__babi?.player(), null, { timeout: 15000 });

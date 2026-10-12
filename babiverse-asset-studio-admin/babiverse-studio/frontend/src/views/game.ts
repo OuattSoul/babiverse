@@ -72,9 +72,13 @@ export async function gameView(root: HTMLElement) {
       h("div", { class: "row" }, h("a", { class: "btn btn-small btn-primary", href: "#/jeu/carte" }, "Carte du jeu : placer des éléments"), download)),
     h("div", { class: "dash" },
       h("section", { class: "panel" }, h("h2", {}, "Création du personnage"),
-        h("p", {}, "Chaque nouveau joueur choisit sa silhouette, sa peau, sa coiffure, son haut, son bas et ses chaussures parmi les composants publiés."),
+        h("p", {}, "Chaque joueur choisit son genre, sa silhouette, sa peau, puis tout ce qui se porte parmi les composants publiés, "
+          + "vus en vignette tels qu'ils seront dans le jeu. Seuls les composants permis pour le genre et la silhouette sont proposés "
+          + "(« Réservé à » des composants), y compris par « Au hasard »."),
         h("ul", { class: "list" },
-          h("li", {}, `${w.body} silhouette(s), ${w.hair} coiffure(s), ${w.top} haut(s), ${w.bottom} bas, ${w.shoes} paire(s) de chaussures`)),
+          h("li", {}, `${w.body} silhouette(s), ${w.hair} coiffure(s), ${w.top} haut(s), ${w.bottom} bas, ${w.dress} robe(s), ${w.shoes} paire(s) de chaussures`),
+          h("li", {}, `Accessoires : ${w.outerwear} veste(s), ${w.headwear} couvre-chef(s), ${w.hair_accessory} accessoire(s) de cheveux, ${w.glasses} lunettes, `
+            + `${w.jewelry} bijou(x), ${w.watch} montre(s), ${w.bag} sac(s), ${w.beard} barbe(s), ${w.makeup} maquillage(s)`)),
         w.body && w.top && w.bottom ? null : h("p", { class: "txt-danger" }, "Garde-robe incomplète : le jeu garde son écran de création d'origine tant qu'il manque une silhouette, un haut ou un bas publié."),
         h("p", { class: "muted small" }, h("a", { href: "#/composants" }, "Gérer les composants de personnage"))),
       h("section", { class: "panel" }, h("h2", {}, "Maison du joueur (« Chez moi »)"),

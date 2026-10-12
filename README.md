@@ -118,21 +118,23 @@ docs/                architecture, game design, monde, économie, feuille de rou
 
 ## Déploiement (petit groupe de testeurs)
 
+> **Hébergement retenu : fronts sur Vercel, backends et base sur Render** — guide pas à pas dans [docs/deploiement-render-vercel.md](docs/deploiement-render-vercel.md) (`render.yaml`, `client/vercel.json`). La procédure ci-dessous (VM + proxy) reste valable pour un serveur à soi.
+
 1. **Serveur** : une VM Linux (1 vCPU / 1 Go suffisent pour quelques dizaines de testeurs), PostgreSQL 15+ et Python 3.12+.
-2. **Backend** : déployer `backend/` **et `shared/`** (le serveur lit `shared/city.json`), puis `pip install -r requirements.txt gunicorn` et définir les variables d'environnement :
+2. **Backend** : déployer `backend/` **et `shared/`** (le serveur lit `shared/city.json`), puis `pip install -r requirements.txt` (inclut uvicorn) et définir les variables d'environnement :
    - `DJANGO_DEBUG=0` ;
    - `DJANGO_SECRET_KEY=<long aléatoire>` ;
    - `DJANGO_ALLOWED_HOSTS=jeu.exemple.ci` ;
    - `DATABASE_URL=postgres://…` ;
    - **e-mails par [Resend](https://resend.com/docs/send-with-python)** (confirmation d'adresse, mot de passe oublié, alertes de sécurité) : `RESEND_API_KEY=re_…` (**obligatoire** : sans clé, le serveur refuse de démarrer en production), `DEFAULT_FROM_EMAIL=BabiVerse <no-reply@jeu.exemple.ci>` sur un domaine vérifié dans Resend, `PUBLIC_URL=https://jeu.exemple.ci` (adresse des liens) ; tester l'envoi avant d'ouvrir aux testeurs ;
-   - `REDIS_URL=redis://…` dès qu'il y a plusieurs workers gunicorn : sans Redis, chaque processus a ses propres compteurs de limitation de débit (limites multipliées par le nombre de workers) ;
+   - `REDIS_URL=redis://…` dès qu'il y a plusieurs workers (uvicorn ou gunicorn) : sans Redis, chaque processus a ses propres compteurs de limitation de débit (limites multipliées par le nombre de workers) ;
    - `NUM_PROXIES=1` derrière un proxy (Caddy/Nginx) : la limite par IP des routes de compte utilise alors la vraie adresse du client et non un `X-Forwarded-For` falsifiable ;
    - appels vocaux entre joueurs (WebRTC) : `WEBRTC_ICE_SERVERS` en JSON (défaut : STUN public de Google). Pour les réseaux mobiles stricts, ajouter un relais TURN, par exemple `[{"urls": "stun:stun.l.google.com:19302"}, {"urls": "turn:turn.exemple.ci:3478", "username": "…", "credential": "…"}]`. Les appels exigent HTTPS (micro) ;
    - facultatif : `SECURE_HSTS_SECONDS` (défaut 86400, à allonger une fois HTTPS validé), `SECURE_SSL_REDIRECT=0` seulement si le proxy redirige déjà.
 
    Sans `DJANGO_DEBUG=1`, DEBUG est désactivé et la clé secrète est exigée (le serveur refuse de démarrer sinon). Vérifier avec `python manage.py check --deploy`.
 
-   Lancer ensuite `python manage.py migrate`, `python manage.py collectstatic`, puis `gunicorn config.wsgi -b 127.0.0.1:8010 -w 3`.
+   Lancer ensuite `python manage.py migrate`, `python manage.py collectstatic`, puis, depuis `backend/`, `python -m uvicorn app.main:app --host 127.0.0.1 --port 8010 --workers 3 --lifespan off --proxy-headers` (ASGI ; `gunicorn config.wsgi -b 127.0.0.1:8010 -w 3` reste possible en WSGI). Les fichiers statiques de `/admin/` (`collectstatic` → `backend/staticfiles/`) sont servis par le proxy, pas par uvicorn.
 3. **Client** : `npm ci && npm run build`, puis servir `client/dist/` en statique.
 4. **Proxy HTTPS** (Caddy ou Nginx) : `/` vers `client/dist`, `/api/` et `/admin/` vers `127.0.0.1:8010`. HTTPS est nécessaire pour le service worker et l'installation en PWA.
 

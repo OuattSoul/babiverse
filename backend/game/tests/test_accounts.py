@@ -121,6 +121,19 @@ class RegisterTests(AccountTestCase):
         res = guest.post("/api/auth/register", {"username": "autre", "password": PASSWORD}, format="json")
         self.assertEqual(res.status_code, 409)
 
+    def test_character_takes_the_username_when_no_name_is_given(self):
+        client = APIClient()
+        register(client, username="kouadio.225")
+        res = client.post("/api/character", {"profile": "etudiant", "appearance": {}}, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()["state"]["character"]["name"], "kouadio.225")
+        # un invité sans identifiants doit toujours donner un nom
+        _, token = create_player()
+        guest = APIClient()
+        guest.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        res = guest.post("/api/character", {"profile": "etudiant", "appearance": {}}, format="json")
+        self.assertEqual(res.json()["error"]["code"], "invalid_name")
+
 
 class LoginTests(AccountTestCase):
     def setUp(self):

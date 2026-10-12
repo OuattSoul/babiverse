@@ -53,8 +53,11 @@ def create_character(player, data, now):
     Player.objects.select_for_update().filter(pk=player.pk).first()
     if Character.objects.filter(player=player).exists():
         raise GameError("character_exists", "Tu as déjà un personnage.")
-    name = str(data.get("name", "")).strip()
-    if not NAME_RE.match(name):
+    name = str(data.get("name") or "").strip()
+    if not name and player.registered:
+        # le nom d'utilisateur choisi à l'inscription sert de nom dans le jeu : on ne le redemande pas
+        name = player.username
+    elif not NAME_RE.match(name):
         raise GameError("invalid_name", "Le nom doit contenir 2 à 24 lettres.", 400)
     profile_id = data.get("profile")
     profile = rules.PROFILES.get(profile_id)

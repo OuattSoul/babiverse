@@ -43,7 +43,7 @@ async function boot() {
     account = (await api.account()).account;
     if (!account.registered) account = await secureAccountScreen();
     let state = (await api.state()).state;
-    if (!state) state = await creationScreen();
+    if (!state) state = await creationScreen(account.username);
     store.apply(state);
   } catch (err) {
     if (err.status === 401) return sessionLost();

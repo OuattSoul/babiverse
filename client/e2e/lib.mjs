@@ -124,13 +124,14 @@ export async function session(name, { desktop = false, args = [] } = {}) {
       return username;
     },
 
-    async createCharacter(charName, profile) {
-      await s.signUp();
-      await page.fill('#char-name', charName);
+    /** Crée un compte dont le nom d'utilisateur commence par `prefix` (c'est aussi le nom du personnage) ; renvoie ce nom. */
+    async createCharacter(prefix, profile) {
+      const name = await s.signUp(uniqueUsername(prefix.toLowerCase().replace(/[^a-z0-9]/g, '')));
       await page.click(`[data-profile="${profile}"]`);
       await page.click('#btn-start');
       await page.waitForFunction(() => window.__babi?.player(), null, { timeout: 15000 });
       await wait(800);
+      return name;
     },
 
     /** Coordonnées écran d'un point du monde (pixels de grille) selon la caméra courante. */

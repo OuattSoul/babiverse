@@ -30,16 +30,45 @@ export async function run() {
 
     // 1. Création : garde-robe de l'atelier
     check('Création : choix de la garde-robe de l’atelier', await page.isVisible('#btn-random-look'));
+    check('Création : le nom d’utilisateur n’est pas redemandé', !(await page.$('input#char-name')));
     const labels = await page.$$eval('.wardrobe > label', (els) => els.map((e) => e.textContent));
-    check('Création : silhouette, peau, coiffure, haut, bas, chaussures',
-      ['Silhouette', 'Peau', 'Coiffure', 'Haut', 'Bas', 'Chaussures'].every((l) => labels.includes(l)), labels.join(', '));
+    check('Création : genre, peau, coiffure, haut, bas, chaussures',
+      ['Genre', 'Peau', 'Coiffure', 'Haut', 'Bas', 'Chaussures'].every((l) => labels.includes(l)), labels.join(', '));
+    // Les options sont les composants publiés de l'atelier, dessinés en vignette ; seuls ceux du genre choisi.
+    const w = pack.wardrobe;
+    const genderOf = (b) => b.gender || (/f[ée]m|femme/i.test(`${b.name} ${b.id}`) ? 'female' : 'male');
+    const allowed = (gender) => {
+      const bodies = w.bodies.filter((b) => genderOf(b) === gender).map((b) => b.id);
+      const ids = new Set(['', ...bodies]);
+      for (const e of Object.values(w.slots).flat()) {
+        if ((!e.genders?.length || e.genders.includes(gender)) && (!e.bodies.length || e.bodies.some((b) => bodies.includes(b)))) ids.add(e.id);
+      }
+      return ids;
+    };
+    const tiles = () => page.$$eval('.wardrobe .tile', (els) => els.map((e) => ({ id: e.dataset.part, on: e.classList.contains('on'),
+      img: e.querySelector('img')?.getAttribute('src') || '' })));
+    const known = new Set(['', ...w.bodies.map((b) => b.id), ...Object.values(w.slots).flat().map((e) => e.id)]);
+    let shown = await tiles();
+    check('Création : options = composants publiés de l’atelier, en vignettes',
+      shown.length > 6 && shown.every((t) => known.has(t.id) && t.img.startsWith('data:image/svg+xml')), `${shown.length} vignettes`);
+    for (const [gender, label] of [['female', 'Féminin'], ['male', 'Masculin']]) {
+      await page.locator('.wardrobe label:text-is("Genre") + .chips .chip', { hasText: label }).click();
+      const ok = allowed(gender);
+      let mixed = (await tiles()).filter((t) => !ok.has(t.id)).map((t) => t.id);
+      for (let i = 0; i < 12 && !mixed.length; i++) {
+        await page.click('#btn-random-look');
+        const now = await tiles();
+        mixed = now.filter((t) => !ok.has(t.id)).map((t) => t.id);
+        if (!(await page.locator('.wardrobe label:text-is("Genre") + .chips .chip.on', { hasText: label }).count())) mixed.push('genre changé');
+      }
+      check(`Création : ${label} — options et « Au hasard » limités à ce genre`, !mixed.length, mixed.join(', '));
+    }
     const src1 = await page.getAttribute('.preview-svg', 'src');
     await page.click('#btn-random-look');
-    await page.locator('.wardrobe label:text-is("Coiffure") + .chips .chip').nth(2).click(); // une autre coiffure
+    await page.locator('.wardrobe label:text-is("Coiffure") + .tiles .tile').nth(2).click(); // une autre coiffure
     const src2 = await page.getAttribute('.preview-svg', 'src');
     check('Création : l’aperçu SVG suit les choix', src1.startsWith('data:image/svg+xml') && src1 !== src2);
     await s.shot('01-creation');
-    await page.fill('#char-name', 'Mariam');
     await page.click('#btn-start');
     await page.waitForFunction(() => window.__babi?.player(), null, { timeout: 20000 });
     await wait(1500);
@@ -138,9 +167,9 @@ export async function run() {
     await page.click('#btn-edit-look', { timeout: 10000 });
     await page.waitForSelector('#btn-save-look', { timeout: 10000 });
     check('Profil : la garde-robe reprend l’apparence actuelle',
-      await page.evaluate(() => document.querySelectorAll('.wardrobe .chip.on').length >= 4));
+      await page.evaluate(() => document.querySelectorAll('.wardrobe .tile.on').length >= 4));
     await page.click('#btn-random-look');
-    await page.locator('.wardrobe label:text-is("Haut") + .chips .chip').nth(1).click();
+    await page.locator('.wardrobe label:text-is("Haut") + .tiles .tile').nth(1).click();
     await page.click('#btn-save-look');
     await page.waitForFunction((b) => JSON.stringify(window.__babi.store.state.character.appearance) !== b, before, { timeout: 10000 }).catch(() => {});
     const after = (await s.state()).character.appearance;

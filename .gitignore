@@ -18,6 +18,7 @@ Thumbs.db
 
 # Atelier d'assets (babiverse-asset-studio-admin/babiverse-studio)
 babiverse-asset-studio-admin/babiverse-studio/backend/babiverse.db*
+babiverse-asset-studio-admin/babiverse-studio/backend/.env
 babiverse-asset-studio-admin/babiverse-studio/backend/media/
 babiverse-asset-studio-admin/babiverse-studio/frontend/node_modules/
 babiverse-asset-studio-admin/babiverse-studio/frontend/dist/

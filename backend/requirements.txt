@@ -6,3 +6,8 @@ resend>=2.49,<3
 psycopg2-binary>=2.9
 # Cache partagé entre workers (limitation de débit) quand REDIS_URL est défini
 redis>=5.0
+# Serveur ASGI de production : python -m uvicorn app.main:app
+uvicorn>=0.30
+# Serveur WSGI de production (Render) et fichiers statiques de l'admin
+gunicorn>=23
+whitenoise>=6.7

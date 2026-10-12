@@ -80,7 +80,6 @@ export async function run() {
 
     // 2. Jeu : le bâtiment est dans la ville, solide, avec sa fiche et sa porte
     await s.signUp();
-    await page.fill('#char-name', 'Visiteur');
     await page.click('#btn-start');
     await page.waitForFunction(() => window.__babi?.player(), null, { timeout: 30000 });
     await page.evaluate(() => window.__babi.world.loadZone('quartier', { pos: { x: 27.5 * 32, y: 11.5 * 32 } }));

@@ -177,7 +177,8 @@ def user_dict(row) -> dict:
 def create_user(conn: sqlite3.Connection, username: str, password: str, role: str, commit: bool = True) -> None:
     if role not in ROLE_PERMISSIONS:
         raise ValueError("rôle inconnu")
-    conn.execute("INSERT OR IGNORE INTO users (username, pw_hash, role, active, created_at, password_changed_at) VALUES (?,?,?,1,?,?)",
+    conn.execute("INSERT INTO users (username, pw_hash, role, active, created_at, password_changed_at) VALUES (?,?,?,1,?,?) "
+                 "ON CONFLICT DO NOTHING",
                  (username, hash_password(password), role, time.time(), time.time()))
     if commit:
         conn.commit()

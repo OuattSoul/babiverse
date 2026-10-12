@@ -28,8 +28,8 @@ async function mobile() {
     await page.click('#tb-login');
     check('« Se connecter » revient au formulaire de connexion', await page.isVisible('#login-form'));
 
-    await s.createCharacter('Koffi', 'etudiant');
-    check('En jeu : pseudonyme dans la barre', (await page.textContent('#hud-name')) === 'Koffi');
+    const koffi = await s.createCharacter('Koffi', 'etudiant');
+    check('En jeu : nom d’utilisateur dans la barre', (await page.textContent('#hud-name')) === koffi);
     check('En jeu : plus de boutons de connexion', !(await page.$('#tb-login')));
     const brand = await box(page, '.tb-brand');
     const vw = page.viewportSize().width;

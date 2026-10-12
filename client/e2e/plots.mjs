@@ -17,7 +17,7 @@ function grant(name, amount) {
 
 export async function run() {
   const suffix = String(Date.now() % 100000);
-  const nameA = `Awa${suffix}`;
+  let nameA = '';
   const a = await session('parcelles-A');
   const b = await session('parcelles-B');
   const { check } = a;
@@ -34,7 +34,7 @@ export async function run() {
 
   try {
     // --- Joueur A ------------------------------------------------------------------
-    await a.createCharacter(nameA, 'entrepreneur');
+    nameA = await a.createCharacter(`awa${suffix}`, 'entrepreneur');
     grant(nameA, 60000);
     await refresh(a);
     await a.walkTo(c(4, 6));

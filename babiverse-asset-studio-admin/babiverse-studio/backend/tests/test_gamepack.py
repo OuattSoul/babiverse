@@ -30,6 +30,22 @@ def test_wardrobe_lists_published_parts_with_face_defaults(api: Api):
     assert all(h["game_hint"] in ("short", "afro", "braids", "bald", None) for h in w["slots"]["hair"])
 
 
+def test_wardrobe_exposes_accessories_and_genders(api: Api):
+    """Tout ce qui se porte (robes, accessoires, maquillage…) avec le genre des silhouettes et des composants réservés."""
+    w = api.c.get("/api/runtime/game-pack", headers=GAME_KEY).json()["wardrobe"]
+    assert {b["gender"] for b in w["bodies"]} == {"male", "female"}
+    assert all(w["slots"][s] for s in ("dress", "headwear", "jewelry", "bag", "beard", "makeup"))
+    every = [x for s in w["slots"].values() for x in s]
+    assert all(set(e["genders"]) <= {"male", "female"} for e in every)
+    assert all(e["genders"] == ["female"] for e in w["slots"]["makeup"])
+    assert all(e["genders"] == ["male"] for e in w["slots"]["beard"])
+    # le visage par défaut respecte le genre de la silhouette
+    by_id = {e["id"]: e for s in w["face_parts"].values() for e in s}
+    for b in w["bodies"]:
+        for pid in w["face"][b["id"]].values():
+            assert not by_id[pid]["genders"] or b["gender"] in by_id[pid]["genders"]
+
+
 def test_inhabitants_replace_npcs_automatically_and_by_choice(api: Api):
     pack = api.c.get("/api/runtime/game-pack", headers=GAME_KEY).json()
     by_tech = {x["technical_name"]: x for x in pack["inhabitants"]}

@@ -3,8 +3,10 @@
 | Variable | Rôle | Défaut |
 |---|---|---|
 | BABIVERSE_ENV | `development`, `test` ou `production` | development |
-| BABIVERSE_DB | chemin de la base SQLite | backend/babiverse.db |
-| BABIVERSE_MEDIA_DIR | dossier des fichiers importés (hors base) | backend/media |
+| BABIVERSE_DATABASE_URL | base **PostgreSQL** (`postgres://rôle:mdp@hôte:5432/base`, `?sslmode=require` pour une base managée) ; prioritaire sur BABIVERSE_DB | — |
+| BABIVERSE_DB | chemin de la base SQLite (repli sans BABIVERSE_DATABASE_URL ; accepte aussi une URL PostgreSQL) | backend/babiverse.db |
+| BABIVERSE_MEDIA_DIR | dossier des fichiers importés (hors base) | backend/media (à côté du fichier SQLite) |
+| BABIVERSE_MEDIA_STORAGE | `disk` (fichiers dans BABIVERSE_MEDIA_DIR) ou `database` (table `media_blobs`, pour un hébergeur sans disque persistant) | disk |
 | BABIVERSE_SECRET | clé de signature des liens de fichiers | générée et conservée en base |
 | BABIVERSE_ADMIN_USER / BABIVERSE_ADMIN_PASSWORD | compte administrateur initial (obligatoire en production) | — |
 | BABIVERSE_MAX_UPLOAD_MB | taille maximale d'un fichier importé | 5 |
@@ -19,8 +21,21 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 _BACKEND = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+
+
+def load_env_file(path: str = os.path.join(_BACKEND, ".env")) -> None:
+    """Lit `backend/.env` (lignes `CLÉ=valeur`, `#` = commentaire) sans écraser les variables déjà définies."""
+    if not os.path.isfile(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
 def _int(name: str, default: int) -> int:
@@ -45,10 +60,24 @@ class Settings:
     session_idle_min: int
     pbkdf2_iterations: int
     game_key: str | None = None
+    media_storage: str = "disk"
 
     @property
     def production(self) -> bool:
         return self.env == "production"
+
+    @property
+    def postgres(self) -> bool:
+        return self.db_path.startswith(("postgres://", "postgresql://"))
+
+    @property
+    def db_label(self) -> str:
+        """Base affichable : URL sans mot de passe, ou nom du fichier SQLite en production."""
+        if self.postgres:
+            u = urlsplit(self.db_path)
+            host = u.hostname or ""
+            return f"{u.scheme}://{u.username or ''}@{host}{':' + str(u.port) if u.port else ''}{u.path}"
+        return os.path.basename(self.db_path) if self.production else self.db_path
 
     @property
     def dev_accounts(self) -> bool:
@@ -58,11 +87,13 @@ class Settings:
 
 def load(db_path: str | None = None) -> Settings:
     env = os.environ.get("BABIVERSE_ENV", "development").strip().lower()
-    db = db_path or os.environ.get("BABIVERSE_DB") or os.path.join(_BACKEND, "babiverse.db")
+    db = (db_path or os.environ.get("BABIVERSE_DATABASE_URL") or os.environ.get("BABIVERSE_DB")
+          or os.path.join(_BACKEND, "babiverse.db"))
     media = os.environ.get("BABIVERSE_MEDIA_DIR")
     if not media:
-        # une base en mémoire ou temporaire garde ses fichiers à côté d'elle
-        media = os.path.join(os.path.dirname(os.path.abspath(db)) if db != ":memory:" else _BACKEND, "media")
+        # une base SQLite temporaire garde ses fichiers à côté d'elle ; PostgreSQL ou mémoire : backend/media
+        local = db != ":memory:" and not db.startswith(("postgres://", "postgresql://"))
+        media = os.path.join(os.path.dirname(os.path.abspath(db)) if local else _BACKEND, "media")
     s = Settings(
         env=env, db_path=db, media_dir=media,
         secret=os.environ.get("BABIVERSE_SECRET") or None,
@@ -75,7 +106,10 @@ def load(db_path: str | None = None) -> Settings:
         session_idle_min=_int("BABIVERSE_SESSION_IDLE_MIN", 120),
         pbkdf2_iterations=_int("BABIVERSE_PBKDF2_ITERATIONS", 200_000),
         game_key=os.environ.get("BABIVERSE_GAME_KEY") or (None if env == "production" else "babiverse-dev"),
+        media_storage=os.environ.get("BABIVERSE_MEDIA_STORAGE", "disk").strip().lower(),
     )
+    if s.media_storage not in ("disk", "database"):
+        raise RuntimeError("BABIVERSE_MEDIA_STORAGE doit valoir « disk » ou « database ».")
     if s.production:
         missing = [n for n, v in (("BABIVERSE_SECRET", s.secret), ("BABIVERSE_ADMIN_USER", s.admin_user),
                                   ("BABIVERSE_ADMIN_PASSWORD", s.admin_password)) if not v]

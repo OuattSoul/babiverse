@@ -460,3 +460,13 @@ button { font: inherit; cursor: pointer; }
 .chat-form { display: flex; gap: 8px; margin-top: 10px; }
 .chat-form input { flex: 1; min-width: 0; font: inherit; padding: 10px 12px; border-radius: 10px; border: 2px solid var(--line); background: #fff; user-select: text; }
 .chat-form input:focus { outline: none; border-color: var(--accent); }
+
+/* Garde-robe de l'atelier : vignettes dessinées avec les vrais composants */
+.char-name { display: block; font-size: 1.05rem; margin-bottom: 6px; word-break: break-all; }
+.tiles { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.tile { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 68px; padding: 3px !important;
+  min-height: 0 !important; border: 2px solid transparent !important; border-radius: 8px !important; background: var(--line) !important; color: inherit !important; }
+.tile img { width: 58px; height: 58px; object-fit: contain; background: var(--panel); border-radius: 6px; }
+.tile span { font-size: 0.68rem; line-height: 1.1; max-width: 62px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile.on { border-color: var(--accent) !important; }
+.tiles[data-slot="body"] .tile img { height: 84px; }

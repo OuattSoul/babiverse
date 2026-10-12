@@ -224,8 +224,8 @@ def seed_categories(conn: sqlite3.Connection) -> None:
     """Ajoute les catégories par défaut absentes (n'écrase jamais une catégorie modifiée)."""
     now = time.time()
     for i, c in enumerate(DEFAULT_CATEGORIES):
-        conn.execute("INSERT OR IGNORE INTO categories (key, label, family, rules, subcategories, description, builtin, archived, position, created_at, updated_at) "
-                     "VALUES (?,?,?,?,?,?,1,0,?,?,?)",
+        conn.execute("INSERT INTO categories (key, label, family, rules, subcategories, description, builtin, archived, position, created_at, updated_at) "
+                     "VALUES (?,?,?,?,?,?,1,0,?,?,?) ON CONFLICT DO NOTHING",
                      (c["key"], c["label"], c["family"], json.dumps(c["rules"]), json.dumps(c["subcategories"], ensure_ascii=False),
                       c.get("description", ""), i * 10, now, now))
     conn.commit()

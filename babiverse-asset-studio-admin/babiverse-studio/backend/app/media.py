@@ -1,7 +1,9 @@
 """Médiathèque : contrôle, stockage et service des fichiers importés.
 
 - Les fichiers sont stockés sur disque (`BABIVERSE_MEDIA_DIR/<2 premiers caractères>/<sha256>.<ext>`), adressés
-  par leur empreinte : deux imports identiques partagent le même fichier. La base ne garde que les métadonnées.
+  par leur empreinte : deux imports identiques partagent le même fichier. La base ne garde que les métadonnées —
+  sauf avec `BABIVERSE_MEDIA_STORAGE=database` (hébergement sans disque persistant) : contenu dans la table
+  `media_blobs`, toujours par empreinte (voir `service.store_file` / `service.read_file`).
 - Le type est déterminé par la SIGNATURE du contenu, pas par l'extension ni par le type annoncé.
 - Formats acceptés : SVG (assaini, voir svgsafe.py), PNG, WebP, JPEG, GIF. Les formats 3D (GLB/glTF) sont refusés :
   aucun pipeline de rendu 3D n'existe dans l'atelier.
@@ -122,9 +124,13 @@ def safe_filename(name: str) -> str:
     return SAFE_NAME.sub("_", base)[:120] or "fichier"
 
 
+def sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
 def store(media_dir: str, data: bytes, ext: str) -> tuple[str, str]:
     """Écrit le fichier s'il n'existe pas ; retourne (sha256, chemin relatif)."""
-    sha = hashlib.sha256(data).hexdigest()
+    sha = sha256(data)
     rel = os.path.join(sha[:2], f"{sha}.{ext}")
     path = os.path.join(media_dir, rel)
     if not os.path.exists(path):

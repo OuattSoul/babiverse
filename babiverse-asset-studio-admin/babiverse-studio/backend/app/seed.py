@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import time
 
 from . import auth, service
 from .config import Settings
@@ -409,8 +410,8 @@ def seed(conn, settings: Settings | None = None, with_content: bool = True) -> N
         terr = service.terrain_template(40, 40, "coast")
         w = conn.execute("SELECT * FROM world WHERE id=1").fetchone()
         conn.execute("INSERT INTO scenes (id, name, description, width, height, terrain, created_by, created_at, updated_at) "
-                     "VALUES ('main', 'Quartier de test', 'Scène de prévisualisation principale.', ?, ?, ?, 'system', strftime('%s','now'), strftime('%s','now'))",
-                     (w["width"] if w else 40, w["height"] if w else 40, w["terrain"] if w else json.dumps(terr)))
+                     "VALUES ('main', 'Quartier de test', 'Scène de prévisualisation principale.', ?, ?, ?, 'system', ?, ?)",
+                     (w["width"] if w else 40, w["height"] if w else 40, w["terrain"] if w else json.dumps(terr), time.time(), time.time()))
         conn.commit()
     if not with_content:
         return

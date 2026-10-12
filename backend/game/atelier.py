@@ -18,7 +18,9 @@ from django.conf import settings
 log = logging.getLogger("game")
 FORMAT = "babiverse-game-pack"
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
-WARDROBE_SLOTS = ("hair", "top", "bottom", "shoes")
+# Tout ce que le joueur peut porter (même liste que gamepack.WARDROBE_SLOTS de l'atelier)
+WARDROBE_SLOTS = ("hair", "top", "bottom", "dress", "outerwear", "shoes", "headwear", "hair_accessory", "glasses",
+                  "jewelry", "watch", "bag", "beard", "makeup")
 FACE_SLOTS = ("eyes", "eyebrows", "nose", "mouth")
 CHANNELS = ("primary", "secondary", "accent")
 
@@ -100,16 +102,18 @@ def nearest(color: str, choices) -> str:
 def clean_look(raw, pack: dict | None) -> dict | None:
     """Apparence de l'atelier validée contre la garde-robe : {body, skin, hair_color, layers{slot: {part, colors}}}.
 
-    Les composants inconnus, hors de la silhouette ou hors palette sont écartés ; sans silhouette, haut et bas
-    valides, None (le personnage garde l'apparence classique du jeu). Le visage est celui de la silhouette.
+    Les composants inconnus, hors de la silhouette, réservés à l'autre genre ou hors palette sont écartés ; sans
+    silhouette valide ni tenue (haut + bas, ou robe), None (le personnage garde l'apparence classique du jeu).
+    Le visage est celui de la silhouette.
     """
     if not isinstance(raw, dict) or not pack:
         return None
     w = pack.get("wardrobe") or {}
-    bodies = {b["id"] for b in w.get("bodies") or []}
+    bodies = {b["id"]: b for b in w.get("bodies") or []}
     body = raw.get("body")
     if body not in bodies:
         return None
+    gender = bodies[body].get("gender")
     skins = w.get("skin_tones") or []
     hair_colors = w.get("hair_colors") or []
     skin = raw.get("skin") if raw.get("skin") in skins else (skins[0] if skins else "#a86b3c")
@@ -123,6 +127,8 @@ def clean_look(raw, pack: dict | None) -> dict | None:
         entry = next((e for e in (w.get("slots") or {}).get(slot) or [] if e["id"] == layer.get("part")), None)
         if not entry or (entry["bodies"] and body not in entry["bodies"]):
             continue
+        if entry.get("genders") and gender and gender not in entry["genders"]:
+            continue  # rouge à lèvres, talons… réservés aux femmes ; barbe, cravate… aux hommes
         colors = {}
         for ch, col in (layer.get("colors") or {}).items() if isinstance(layer.get("colors"), dict) else ():
             if ch not in CHANNELS or not isinstance(col, str) or not HEX.match(col):
@@ -132,7 +138,10 @@ def clean_look(raw, pack: dict | None) -> dict | None:
                 continue
             colors[ch] = col.lower()
         layers[slot] = {"part": entry["id"], "colors": colors}
-    if "top" not in layers or "bottom" not in layers:
+    if "dress" in layers:  # une robe (ou un boubou) remplace haut et bas
+        layers.pop("top", None)
+        layers.pop("bottom", None)
+    elif "top" not in layers or "bottom" not in layers:
         return None
     for slot, pid in ((w.get("face") or {}).get(body) or {}).items():
         if slot in FACE_SLOTS and pid:
@@ -143,8 +152,9 @@ def clean_look(raw, pack: dict | None) -> dict | None:
 def fallback_appearance(look: dict, pack: dict, skins, outfits, hairs) -> dict:
     """Apparence du jeu 3D d'origine la plus proche (affichée si le pack n'est plus disponible)."""
     w = pack.get("wardrobe") or {}
-    top = look["layers"]["top"]
-    entry = next((e for e in (w.get("slots") or {}).get("top") or [] if e["id"] == top["part"]), {})
+    slot = "top" if "top" in look["layers"] else "dress"
+    top = look["layers"][slot]
+    entry = next((e for e in (w.get("slots") or {}).get(slot) or [] if e["id"] == top["part"]), {})
     outfit = top["colors"].get("primary") or (entry.get("default_colors") or {}).get("primary") or outfits[0]
     hair = "bald"
     if "hair" in look["layers"]:

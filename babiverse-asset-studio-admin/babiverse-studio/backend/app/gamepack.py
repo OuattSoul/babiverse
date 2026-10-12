@@ -1,8 +1,9 @@
 """Pack de jeu : ce que le jeu Babiverse charge réellement depuis l'atelier (atelier = admin, jeu = joueurs).
 
 Format « babiverse-game-pack » v1, versions PUBLIÉES uniquement :
-- `wardrobe` : garde-robe proposée aux nouveaux joueurs (silhouettes, coiffures, hauts, bas, chaussures,
-  teintes de peau) et visage par défaut de chaque silhouette ;
+- `wardrobe` : garde-robe proposée aux joueurs (silhouettes avec leur genre, coiffures, hauts, bas, robes, vestes,
+  chaussures, accessoires, barbe, maquillage ; `genders` = réservé à un genre ; teintes de peau) et visage par
+  défaut de chaque silhouette ;
 - `inhabitants` : habitants publiés (personnages SVG) ; chacun remplace un PNJ du jeu (`npc`) ou se promène
   en ville en plus des PNJ (`npc` = null) ;
 - `home` : intérieur choisi pour la maison du joueur (« Chez moi »), avec la description de ses meubles ;
@@ -45,7 +46,9 @@ GAME_NPCS = [
 ]
 NPC_IDS = [n["id"] for n in GAME_NPCS]
 
-WARDROBE_SLOTS = ["hair", "top", "bottom", "shoes"]
+# Tout ce que le joueur peut porter (même ordre que l'écran de création du jeu) ; le visage reste celui de la silhouette.
+WARDROBE_SLOTS = ["hair", "top", "bottom", "dress", "outerwear", "shoes", "headwear", "hair_accessory", "glasses",
+                  "jewelry", "watch", "bag", "beard", "makeup"]
 FACE_SLOTS = ["eyes", "eyebrows", "nose", "mouth"]
 # Mêmes listes que frontend/src/character/compose.ts (générateur d'habitants)
 SKIN_TONES = ["#f1c27d", "#e0ac69", "#c68642", "#a86b3c", "#8d5524", "#6f4422", "#5c3a1e", "#3f2716"]
@@ -215,15 +218,20 @@ def _wardrobe(conn, parts: dict) -> dict:
         entry = {"id": a["id"], "key": key, "name": p["name"], "slot": p["slot"], "bodies": props.get("bodies") or [],
                  "palette": props.get("palette") or {}, "default_colors": props.get("default_colors") or {},
                  "channels": [c for c in ("primary", "secondary", "accent") if c in (p.get("channels") or {})]}
+        entry["genders"] = [g for g in props.get("genders") or [] if g in ("male", "female")]
         if p["slot"] == "body":
+            # silhouette sans genre déclaré (ancienne base) : déduit de son nom technique
+            entry["gender"] = props.get("gender") if props.get("gender") in ("male", "female") else (
+                "female" if _silhouette(conn, a["id"]) == "f" else "male")
             bodies.append(entry)
         elif p["slot"] in slots:
             if p["slot"] == "hair":
                 entry["game_hint"] = props.get("game_hint")
             slots[p["slot"]].append(entry)
-    fits = lambda e, b: not e["bodies"] or b in e["bodies"]  # noqa: E731
+    def fits(e, b):
+        return (not e["bodies"] or b["id"] in e["bodies"]) and (not e["genders"] or b["gender"] in e["genders"])
     for b in bodies:
-        face[b["id"]] = {s: next((e["id"] for e in slots[s] if fits(e, b["id"])), None) for s in FACE_SLOTS}
+        face[b["id"]] = {s: next((e["id"] for e in slots[s] if fits(e, b)), None) for s in FACE_SLOTS}
     return {"bodies": bodies, "slots": {s: slots[s] for s in WARDROBE_SLOTS}, "face": face,
             "face_parts": {s: slots[s] for s in FACE_SLOTS},
             "skin_tones": SKIN_TONES, "hair_colors": HAIR_COLORS, "cloth_colors": CLOTH_COLORS}

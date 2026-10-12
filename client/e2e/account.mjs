@@ -50,8 +50,8 @@ export async function run() {
   try {
     const username = await s.signUp();
     const email = `${username}@exemple.ci`;
-    check('Inscription : écran de création du personnage', await page.isVisible('#char-name'));
-    await page.fill('#char-name', 'Adjoua');
+    check('Inscription : création du personnage sans redemander le nom', (await page.textContent('#char-name')) === username
+      && !(await page.$('input#char-name')));
     await page.click('[data-profile="salarie"]');
     await page.click('#btn-start');
     await inGame();
@@ -88,7 +88,7 @@ export async function run() {
     await page.fill('#auth-password', PASSWORD);
     await page.click('#login-form-submit');
     await inGame();
-    check('Connexion par nom d\'utilisateur : même personnage', (await page.textContent('#hud-name')) === 'Adjoua');
+    check('Connexion par nom d\'utilisateur : même personnage', (await page.textContent('#hud-name')) === username);
 
     // Mot de passe oublié (par nom d'utilisateur) : réponse identique dans tous les cas.
     await page.evaluate(() => localStorage.removeItem('babiverse.token'));
@@ -108,7 +108,7 @@ export async function run() {
       await page.fill('#reset-password2', NEW_PASSWORD);
       await page.click('#reset-form-submit');
       await inGame();
-      check('Réinitialisation par le lien : connecté avec le nouveau mot de passe', (await page.textContent('#hud-name')) === 'Adjoua');
+      check('Réinitialisation par le lien : connecté avec le nouveau mot de passe', (await page.textContent('#hud-name')) === username);
     }
 
     // Lien de réinitialisation invalide : refus clair, le jeton disparaît de l'adresse.

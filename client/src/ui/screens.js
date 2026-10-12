@@ -5,6 +5,7 @@ import { store } from '../state/store.js';
 import { createPreview } from '../engine3d/preview.js';
 import { composeCharacter, svgDataUrl } from '../atelier/compose.js';
 import { atelier, studioLook, svgCharacter, wardrobeReady } from '../atelier/pack.js';
+import { bodiesOf, colorsOf, createChoice, fits, gendersOf, GENDER_LABELS, WARDROBE_SECTIONS } from '../atelier/wardrobe.js';
 import { ui } from './ui.js';
 
 const el = ui.el;
@@ -111,7 +112,7 @@ function registerFields() {
   return {
     nodes: [...username.nodes,
       el('small', { class: 'muted' }, '3 à 20 caractères sans espace : lettres, chiffres, « _ » ou « . ». C\'est avec lui '
-        + 'que tu te connectes ; les autres joueurs voient seulement ton pseudonyme.'),
+        + 'que tu te connectes, et c\'est aussi le nom de ton personnage, visible des autres joueurs.'),
       ...password.nodes,
       ...email.nodes,
       el('small', { class: 'muted' }, 'Sert uniquement à récupérer ton compte si tu oublies ton mot de passe ou s\'il est '
@@ -155,7 +156,7 @@ export function authScreen(mode = 'login', { onShow } = {}) {
             auth.token = (await api.register(data)).token;
             resolve();
           }),
-          el('p', { class: 'muted' }, 'Ton pseudonyme (le nom de ton personnage) se choisit juste après. Aucun paiement réel. ',
+          el('p', { class: 'muted' }, 'Ton nom d\'utilisateur sera aussi le nom de ton personnage ; son apparence se choisit juste après. Aucun paiement réel. ',
             el('a', { href: '#', onclick: (e) => { e.preventDefault(); privacyDialog(() => show('register')); } },
               'Ce que nous enregistrons')),
           el('button', { class: 'ghost', type: 'button', onclick: () => show('login') }, "J'ai déjà un compte"),
@@ -253,55 +254,54 @@ export function verifyEmailScreen(token) {
 
 // --- Garde-robe de l'atelier ---------------------------------------------------------------
 
-const WARDROBE_SECTIONS = [['hair', 'Coiffure'], ['top', 'Haut'], ['bottom', 'Bas'], ['shoes', 'Chaussures']];
-const pickRandom = (list) => list[Math.floor(Math.random() * list.length)];
 const shortName = (name) => name.replace(/^Corps\s*(?:à|—|-)?\s*silhouette\s+/i, '').replace(/^\p{L}/u, (c) => c.toUpperCase());
+// Cadrage des vignettes dans le repère des personnages (0 0 200 380) : la partie du corps qui porte l'élément.
+const HEAD = '35 0 130 130';
+const THUMB_VIEW = {
+  body: '0 0 200 380', hair: HEAD, headwear: HEAD, hair_accessory: HEAD, glasses: '45 30 110 80', beard: '45 40 110 90',
+  makeup: '50 35 100 80', jewelry: '35 30 130 120', top: '15 90 170 170', outerwear: '15 90 170 190',
+  bottom: '25 200 150 180', dress: '15 90 170 290', shoes: '40 290 120 90', watch: '20 170 160 130', bag: '0 80 200 240',
+};
 
 /**
- * Choix de l'apparence avec les composants publiés dans l'atelier : silhouette, peau, coiffure, haut, bas,
- * chaussures (et leurs couleurs). `initial` : apparence `studio` actuelle (changement après la création), sinon
- * tirage au sort. Retourne { preview, lead, element, value(), start(), dispose() }.
+ * Choix de l'apparence parmi les composants PUBLIÉS dans l'atelier : genre, silhouette, peau, puis tout ce qui
+ * se porte (coiffure, haut, bas, robe, veste, chaussures, accessoires, barbe, maquillage) avec leurs couleurs.
+ * Chaque option est une vignette dessinée avec le vrai composant, sur la silhouette choisie ; seuls les
+ * composants compatibles avec le genre et la silhouette sont proposés (règles dans atelier/wardrobe.js).
+ * `initial` : apparence `studio` actuelle (changement après la création), sinon tirage au sort.
+ * Retourne { preview, lead, element, value(), start(), dispose() }.
  */
 function wardrobePicker(initial = null) {
   const w = atelier.pack.wardrobe;
-  const fits = (e, body) => !e.bodies.length || e.bodies.includes(body);
-  const colorsOf = (e) => (e.palette?.primary?.length ? e.palette.primary : w.cloth_colors);
-  const choice = { body: w.bodies[0].id, skin: w.skin_tones[0], hair_color: w.hair_colors[0], layers: {} };
-  const wear = (slot, e, color) => {
-    choice.layers[slot] = e ? { part: e.id, colors: e.channels.includes('primary') ? { primary: color || e.default_colors.primary || colorsOf(e)[0] } : {} } : null;
-  };
-  const randomize = () => {
-    choice.body = pickRandom(w.bodies).id;
-    choice.skin = pickRandom(w.skin_tones);
-    choice.hair_color = pickRandom(w.hair_colors.slice(0, 5));
-    for (const [slot] of WARDROBE_SECTIONS) {
-      const options = (w.slots[slot] || []).filter((e) => fits(e, choice.body));
-      const e = options.length ? pickRandom(options) : null;
-      wear(slot, e, e ? pickRandom(colorsOf(e)) : null);
+  const sel = createChoice(w);
+  const { choice } = sel;
+  if (!sel.restore(initial)) sel.randomize();
+
+  // Vignettes : la silhouette (peau, visage) avec le seul élément montré, en cache tant que rien ne change.
+  const thumbs = new Map();
+  const thumb = (slot, layers) => {
+    const props = svgCharacter({ studio: studioLook({ body: choice.body, skin: choice.skin, hair_color: choice.hair_color, layers }) });
+    if (!props) return '';
+    const id = `${slot}|${JSON.stringify(props)}`;
+    if (!thumbs.has(id)) {
+      const { svg } = composeCharacter(props, atelier.pack.parts, { idPrefix: `t${thumbs.size}` });
+      thumbs.set(id, svgDataUrl(svg.replace(/viewBox="[^"]*"/, `viewBox="${THUMB_VIEW[slot] || THUMB_VIEW.body}"`)));
     }
+    return thumbs.get(id);
   };
-  const restore = (look) => {
-    if (!look || !w.bodies.some((b) => b.id === look.body)) return false;
-    choice.body = look.body;
-    if (w.skin_tones.includes(look.skin)) choice.skin = look.skin;
-    if (w.hair_colors.includes(look.hair_color)) choice.hair_color = look.hair_color;
-    for (const [slot] of WARDROBE_SECTIONS) {
-      const layer = look.layers?.[slot];
-      const e = layer && (w.slots[slot] || []).find((x) => x.id === layer.part && fits(x, look.body));
-      if (e) choice.layers[slot] = { part: e.id, colors: { ...(layer.colors || {}) } };
-      else if (slot !== 'hair') wear(slot, (w.slots[slot] || []).find((x) => fits(x, look.body)) || null);
-      else choice.layers[slot] = null;
-    }
-    return true;
-  };
-  if (!restore(initial)) randomize();
 
   const preview = el('img', { class: 'preview preview-svg', alt: 'Aperçu de ton personnage' });
   const lead = el('div', { class: 'wardrobe' });
   const form = el('div', { class: 'wardrobe' });
   const chips = (items, isOn, onPick) => el('div', { class: 'chips' }, ...items.map(([value, label]) => {
-    const b = el('button', { class: `chip${isOn(value) ? ' on' : ''}`, type: 'button' }, label);
+    const b = el('button', { class: `chip${isOn(value) ? ' on' : ''}`, type: 'button', 'data-value': value }, label);
     b.addEventListener('click', () => onPick(value));
+    return b;
+  }));
+  const tiles = (slot, items) => el('div', { class: 'tiles', 'data-slot': slot }, ...items.map(({ id, label, src, on, pick }) => {
+    const b = el('button', { class: `tile${on ? ' on' : ''}`, type: 'button', 'data-part': id, title: label, 'aria-pressed': String(on) },
+      el('img', { src, alt: '' }), el('span', {}, label));
+    b.addEventListener('click', pick);
     return b;
   }));
   const swatches = (colors, current, onPick, label) => el('div', { class: 'swatches', role: 'group', 'aria-label': label }, ...colors.map((c) => {
@@ -309,45 +309,53 @@ function wardrobePicker(initial = null) {
     b.addEventListener('click', () => onPick(c));
     return b;
   }));
+
   const draw = () => {
     const props = svgCharacter({ studio: studioLook(choice) });
     if (props) preview.src = svgDataUrl(composeCharacter(props, atelier.pack.parts, { idPrefix: 'p', width: 110 }).svg);
-    const sections = [
-      el('label', {}, 'Silhouette'),
-      chips(w.bodies.map((b) => [b.id, shortName(b.name)]), (v) => v === choice.body, (v) => {
-        choice.body = v;
-        // vêtements réservés à l'autre silhouette : remplacés par le premier compatible
-        for (const [slot] of WARDROBE_SECTIONS) {
-          const cur = choice.layers[slot] && (w.slots[slot] || []).find((e) => e.id === choice.layers[slot].part);
-          if (cur && !fits(cur, v)) wear(slot, (w.slots[slot] || []).find((e) => fits(e, v)) || null);
-        }
-        draw();
-      }),
-      el('label', {}, 'Peau'), swatches(w.skin_tones, choice.skin, (c) => { choice.skin = c; draw(); }, 'Teinte de peau'),
-    ];
-    for (const [slot, label] of WARDROBE_SECTIONS) {
-      const options = (w.slots[slot] || []).filter((e) => fits(e, choice.body));
+    // Genre, silhouette (vignettes du genre choisi seulement), peau
+    const head = [];
+    const genders = gendersOf(w);
+    if (genders.length > 1) {
+      head.push(el('label', {}, 'Genre'), chips(genders.map((g) => [g, GENDER_LABELS[g]]), (g) => g === choice.gender,
+        (g) => { sel.setGender(g); draw(); }));
+    }
+    const bodies = bodiesOf(w, choice.gender);
+    if (bodies.length > 1) {
+      head.push(el('label', {}, 'Silhouette'), tiles('body', bodies.map((b) => ({
+        id: b.id, label: shortName(b.name), on: b.id === choice.body,
+        src: thumb('body', Object.fromEntries(Object.entries(choice.layers).filter(([slot, l]) => l && sel.part(slot) && fits(sel.part(slot), b)))),
+        pick: () => { sel.setBody(b.id); draw(); },
+      }))));
+    }
+    head.push(el('label', {}, 'Peau'), swatches(w.skin_tones, choice.skin, (c) => { choice.skin = c; draw(); }, 'Teinte de peau'));
+    lead.replaceChildren(...head);
+
+    // Tout ce qui se porte : uniquement les emplacements qui ont au moins un composant compatible
+    const sections = [];
+    for (const [slot, label, none] of WARDROBE_SECTIONS) {
+      const options = sel.options(slot);
       if (!options.length) continue;
       const cur = choice.layers[slot];
-      const items = options.map((e) => [e.id, e.name]);
-      if (slot === 'hair') items.unshift(['', 'Rasé']);
-      sections.push(el('label', {}, label), chips(items, (v) => (cur?.part || '') === v, (v) => {
-        wear(slot, options.find((e) => e.id === v) || null, cur?.colors?.primary);
-        draw();
-      }));
-      const e = cur && options.find((x) => x.id === cur.part);
+      const items = options.map((e) => {
+        const colors = cur?.part === e.id ? cur.colors : (e.default_colors?.primary ? { primary: e.default_colors.primary } : {});
+        return { id: e.id, label: e.name, on: cur?.part === e.id, src: thumb(slot, { [slot]: { part: e.id, colors } }),
+          pick: () => { sel.wear(slot, e, cur?.colors?.primary); draw(); } };
+      });
+      if (none) items.unshift({ id: '', label: none, on: !cur, src: thumb(slot, {}), pick: () => { sel.wear(slot, null); draw(); } });
+      sections.push(el('label', {}, label), tiles(slot, items));
+      const e = sel.part(slot);
       if (slot === 'hair' && e) sections.push(swatches(w.hair_colors, choice.hair_color, (c) => { choice.hair_color = c; draw(); }, 'Couleur des cheveux'));
       else if (e && e.channels.includes('primary')) {
-        const palette = colorsOf(e);
+        const palette = colorsOf(w, e);
         if (!palette.includes(cur.colors.primary)) cur.colors.primary = palette[0];
         sections.push(swatches(palette, cur.colors.primary, (c) => { cur.colors.primary = c; draw(); }, `Couleur : ${label}`));
       }
     }
-    lead.replaceChildren(...sections.slice(0, 4));
-    form.replaceChildren(...sections.slice(4));
+    form.replaceChildren(...sections);
   };
   const dice = el('button', { class: 'chip', type: 'button', id: 'btn-random-look' }, '🎲 Au hasard');
-  dice.addEventListener('click', () => { randomize(); draw(); });
+  dice.addEventListener('click', () => { sel.randomize(); draw(); });
   draw();
   return {
     preview: el('div', { class: 'preview-col' }, preview, dice),
@@ -355,7 +363,7 @@ function wardrobePicker(initial = null) {
     element: form,
     value: () => ({ studio: studioLook(choice) }),
     start() {},
-    dispose() {},
+    dispose() { thumbs.clear(); },
   };
 }
 
@@ -429,12 +437,16 @@ export function appearancePanel({ onSaved } = {}) {
   picker.start();
 }
 
-/** Création du personnage. Résout avec l'état serveur du nouveau personnage. */
-export function creationScreen() {
+/**
+ * Création du personnage. Résout avec l'état serveur du nouveau personnage.
+ * `username` : nom d'utilisateur choisi à l'inscription ; il sert de nom dans le jeu (on ne le redemande pas,
+ * le serveur le reprend lui-même).
+ */
+export function creationScreen(username) {
   return new Promise((resolve) => {
     const picker = appearancePicker();
     let profile = 'etudiant';
-    const name = el('input', { id: 'char-name', maxlength: 24, placeholder: 'Ex. Kouadio, Mariam…', autocomplete: 'nickname' });
+    const name = el('strong', { id: 'char-name', class: 'char-name' }, username || '');
     const error = el('p', { class: 'error', role: 'alert' });
 
     const profiles = el('div', { class: 'profiles' }, ...Object.entries(store.config.profiles).map(([id, p]) => {
@@ -453,7 +465,7 @@ export function creationScreen() {
       error.textContent = '';
       start.disabled = true;
       try {
-        const res = await api.createCharacter({ name: name.value.trim(), profile, appearance: picker.value() });
+        const res = await api.createCharacter({ profile, appearance: picker.value() });
         picker.dispose();
         resolve(res.state);
       } catch (err) {
@@ -467,11 +479,11 @@ export function creationScreen() {
       el('p', { class: 'muted' }, 'Cité Akwaba, Abidjan. Crée ton personnage et commence ta nouvelle vie.'),
       el('div', { class: 'creator' },
         picker.preview,
-        el('div', { class: 'grow' }, el('label', { for: 'char-name' }, 'Ton pseudonyme'), name, picker.lead)),
+        el('div', { class: 'grow' }, el('label', {}, 'Ton nom dans le jeu'), name, picker.lead)),
       picker.element,
       el('label', {}, 'Ta situation de départ'), profiles,
       error, start,
-      el('p', { class: 'muted' }, 'Ton pseudonyme est visible des autres joueurs. Aucun paiement réel.'),
+      el('p', { class: 'muted' }, 'Ton nom d\'utilisateur est visible des autres joueurs. Aucun paiement réel.'),
     );
     picker.start();
   });
@@ -496,7 +508,7 @@ const PRIVACY = [
   ['Pourquoi', 'Uniquement pour faire fonctionner le jeu, sauvegarder ta partie et corriger les bugs de la bêta. '
     + 'L\'e-mail ne sert qu\'à récupérer ton compte et à te prévenir des changements importants (mot de passe, adresse, '
     + 'connexion bloquée) ; il est envoyé par notre prestataire d\'e-mails, Resend. '
-    + 'Rien n\'est vendu ni partagé. Ton pseudonyme est visible des autres joueurs (maison, parcelle, panneau) ; '
+    + 'Rien n\'est vendu ni partagé. Le nom de ton personnage (ton nom d\'utilisateur) est visible des autres joueurs (maison, parcelle, panneau) ; '
     + 'ton e-mail et ton nom d\'utilisateur ne le sont pas.'],
   ['Données techniques', 'Comme tout site, le serveur voit ton adresse IP le temps de la connexion (journaux techniques). '
     + 'Ta session est un jeton conservé sur ton appareil ; le serveur n\'en garde qu\'une empreinte. Elle expire après '

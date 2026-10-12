@@ -11,10 +11,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import auth
-from app.db import SCHEMA_V1, schema_version
+from app.db import SCHEMA_V1, SCHEMA_VERSION, schema_version
 from app.main import create_app
 
-from .conftest import Api, clone
+from .conftest import PG_URL, Api, clone, new_db
 
 PNG_1x1 = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
                         "1f15c4890000000d49444154789c6300010000000500010d0a2db40000000049454e44ae426082")
@@ -37,6 +37,7 @@ def tech_id(api, tech):
 
 # ---------------------------------------------------------------- migration et persistance
 
+@pytest.mark.skipif(PG_URL is not None, reason="le prototype v0.1 n'a existé qu'en SQLite")
 def test_migration_from_prototype_v01_database(tmp_path):
     path = tmp_path / "old.db"
     c = sqlite3.connect(path)
@@ -52,7 +53,7 @@ def test_migration_from_prototype_v01_database(tmp_path):
     c.commit(); c.close()
     app = create_app(str(path), with_content=False)
     conn = app.state.conn
-    assert schema_version(conn) == 2
+    assert schema_version(conn) == SCHEMA_VERSION
     row = conn.execute("SELECT scene_id, data FROM instances WHERE id='i-1'").fetchone()
     assert row["scene_id"] == "main" and row["data"] == "{}"
     scene = conn.execute("SELECT * FROM scenes WHERE id='main'").fetchone()
@@ -95,6 +96,30 @@ def test_persistence_after_restart(tmp_path, template_dir):
         assert f.status_code == 200 and f.headers["content-type"].startswith("image/svg+xml") and b"<svg" in f.content
         assert f.headers["content-security-policy"].startswith("default-src 'none'")
         assert any(s["id"] == scene["id"] for s in api.get("admin", "/api/scenes").json())
+
+
+def test_media_stored_in_database_survive_without_media_dir(tmp_path, monkeypatch):
+    """Hébergeur sans disque persistant : les fichiers vivent en base et le dossier des médias peut disparaître."""
+    monkeypatch.setenv("BABIVERSE_MEDIA_STORAGE", "database")
+    monkeypatch.setenv("BABIVERSE_MEDIA_DIR", str(tmp_path / "ephemere"))
+    db = new_db(tmp_path, "blobs.db")
+    app = create_app(db, with_content=False)
+    with TestClient(app) as client:
+        api = Api(client)
+        m = upload(api, SVG_OK, "jupe.svg", name="Jupe base").json()
+        png = upload(api, PNG_1x1, "p.png", name="Point").json()
+        assert api.get("admin", "/api/system").json()["media_storage"] == "database"
+    app.state.conn.close()
+    assert not any(f.is_file() for f in (tmp_path / "ephemere").rglob("*"))  # rien sur disque
+    app2 = create_app(db, with_content=False)  # « redémarrage » sur un disque vierge
+    with TestClient(app2) as client:
+        api = Api(client)
+        for mid, needle in ((m["id"], b"<svg"), (png["id"], b"PNG")):
+            f = client.get(api.get("admin", f"/api/media/{mid}").json()["url"])
+            assert f.status_code == 200 and needle in f.content
+        sha = api.get("admin", f"/api/media/{m['id']}").json()["sha256"]
+        assert app2.state.conn.execute("SELECT COUNT(*) FROM media_blobs WHERE sha256=?", (sha,)).fetchone()[0] == 1
+    app2.state.conn.close()
 
 
 # ---------------------------------------------------------------- authentification et permissions
@@ -146,12 +171,13 @@ def test_session_logout_lockout_and_user_management(api):
 
 def test_production_refuses_missing_secrets(tmp_path, monkeypatch):
     monkeypatch.setenv("BABIVERSE_ENV", "production")
+    db = new_db(tmp_path, "p.db")
     with pytest.raises(RuntimeError):
-        create_app(str(tmp_path / "p.db"))
+        create_app(db)
     monkeypatch.setenv("BABIVERSE_SECRET", "s" * 40)
     monkeypatch.setenv("BABIVERSE_ADMIN_USER", "chef")
     monkeypatch.setenv("BABIVERSE_ADMIN_PASSWORD", "Un-Mot-De-Passe-Long-2026")
-    app = create_app(str(tmp_path / "p.db"), with_content=False)
+    app = create_app(db, with_content=False)
     names = {r[0] for r in app.state.conn.execute("SELECT username FROM users")}
     assert names == {"chef"}  # aucun compte de développement en production
     app.state.conn.close()
@@ -477,7 +503,7 @@ def test_export_import_roundtrip_into_new_environment(api, tmp_path):
     assert any(n.startswith("media/") and n.endswith(".svg") for n in z.namelist())
 
     # environnement neuf, sans contenu
-    other = create_app(str(tmp_path / "other.db"), with_content=False)
+    other = create_app(new_db(tmp_path, "other.db"), with_content=False)
     with TestClient(other) as client:
         api2 = Api(client)
         prev = api2.upload("publieur", "/api/imports", r.content, filename="lot.zip").json()
