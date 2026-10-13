@@ -18,9 +18,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, bundle, config, gamepack, gameworld, media as md, runtime, service
+from . import auth, bundle, config, gamepack, gameworld, media as md, runtime, service, worldmaps
 from .behaviors import BEHAVIORS
 from .db import connect, get_setting, recover, schema_version
+from .models import (CityIn, DistrictIn, MapDraftIn, MapIn, MapPublishIn, MapRestoreIn)
 from .models import (CategoryIn, CategoryPatch, ChannelAssignIn, CreateAssetIn, DuplicateIn, ExportIn, GameSettingsIn, ImportApplyIn, LoginIn,
                      LogoutIn, MediaPatch, MigrateIn, MovePatch, PasswordIn, PlaceIn, PlacementIn, PublishInhabitantsIn, RemovalIn, RevertIn, SceneIn, ScenePatch, UpdateDraftIn,
                      UserIn, UserPatch)
@@ -123,6 +124,14 @@ def create_app(db_path: str | None = None, with_content: bool = True) -> FastAPI
             return user
         return dep
 
+    async def upload_body(request: Request) -> bytes:
+        """Fichier importé : plafond des modèles 3D pour un glTF / GLB, plafond ordinaire sinon (413 au-delà)."""
+        data = await raw_body(request, max(settings.max_upload_bytes, settings.max_model_bytes))
+        limit = settings.max_model_bytes if md.sniff(data[:4096]) == "model/gltf" else settings.max_upload_bytes
+        if len(data) > limit:
+            raise HTTPException(413, f"Fichier trop volumineux (maximum {limit // 1048576} Mo).")
+        return data
+
     async def raw_body(request: Request, limit: int) -> bytes:
         cl = request.headers.get("content-length")
         if cl and cl.isdigit() and int(cl) > limit:
@@ -192,7 +201,7 @@ def create_app(db_path: str | None = None, with_content: bool = True) -> FastAPI
                 "roles": {r: {"label": auth.ROLE_LABELS[r], "permissions": sorted(p)} for r, p in auth.ROLE_PERMISSIONS.items()},
                 "media_categories": md.MEDIA_CATEGORIES,
                 "limits": {"upload_mb": settings.max_upload_bytes // 1048576, "import_mb": settings.max_import_bytes // 1048576,
-                           "image_px": settings.max_image_px}}
+                           "image_px": settings.max_image_px, "model_mb": settings.max_model_bytes // 1048576}}
 
     @app.get("/api/dashboard")
     def dashboard(conn=Depends(db), _=Depends(need("asset.read"))):
@@ -354,7 +363,7 @@ def create_app(db_path: str | None = None, with_content: bool = True) -> FastAPI
     async def upload_media(request: Request, filename: str = Query(..., max_length=200), name: str = Query("", max_length=80),
                            category: str = Query("other"), tags: str = Query("", max_length=400),
                            conn=Depends(db), user=Depends(need("media.upload"))):
-        data = await raw_body(request, settings.max_upload_bytes)
+        data = await upload_body(request)
         tag_list = [t.strip()[:30] for t in tags.split(",") if t.strip()][:20]
         with _lock:
             return service.upload_media(conn, user, data, filename, name or None, category, tag_list)
@@ -362,7 +371,8 @@ def create_app(db_path: str | None = None, with_content: bool = True) -> FastAPI
     @app.get("/api/media/{media_id}")
     def media_detail(media_id: str, conn=Depends(db), _=Depends(need("asset.read"))):
         return {**service.media_summary(conn, service.get_media_row(conn, media_id)),
-                "usage": service.media_usage(conn, media_id), "revisions": service.media_revisions(conn, media_id)}
+                "usage": service.media_usage(conn, media_id), "revisions": service.media_revisions(conn, media_id),
+                "map_usage": worldmaps.map_usage(conn, media_id)}
 
     @app.get("/api/media/{media_id}/svg")
     def media_svg(media_id: str, conn=Depends(db), _=Depends(need("asset.read"))):
@@ -379,7 +389,7 @@ def create_app(db_path: str | None = None, with_content: bool = True) -> FastAPI
     @app.post("/api/media/{media_id}/replace")
     async def media_replace(media_id: str, request: Request, filename: str = Query(..., max_length=200),
                             conn=Depends(db), user=Depends(need("media.upload"))):
-        data = await raw_body(request, settings.max_upload_bytes)
+        data = await upload_body(request)
         with _lock:
             return service.replace_media(conn, user, media_id, data, filename)
 
@@ -433,6 +443,73 @@ def create_app(db_path: str | None = None, with_content: bool = True) -> FastAPI
             if "asset.export" not in user["permissions"]:
                 raise HTTPException(403, "Permission refusée (asset.export).")
         return gamepack.game_pack(conn)
+
+    @app.get("/api/runtime/models/{media_id}/{revision}")
+    def runtime_model(media_id: str, revision: int, conn=Depends(db), x_babiverse_game_key: str = Header(default="")):
+        # Lu par le serveur du jeu (clé partagée), qui le relaie au navigateur : seulement les modèles des cartes publiées.
+        key = settings.game_key
+        if not (key and x_babiverse_game_key and hmac.compare_digest(x_babiverse_game_key, key)):
+            raise HTTPException(401, "Clé du jeu requise.")
+        with _lock:
+            data, mime = worldmaps.published_model(conn, media_id, revision)
+        return Response(content=data, media_type=mime, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+    # ------------------------------------------------------------ monde : villes, zones, cartes du jeu
+    @app.get("/api/game/world")
+    def world_view(conn=Depends(db), _=Depends(need("asset.read"))):
+        return worldmaps.world(conn)
+
+    @app.post("/api/game/world/cities", status_code=201)
+    def world_city(body: CityIn, conn=Depends(db), user=Depends(need("world.manage"))):
+        with _lock:
+            return worldmaps.create_city(conn, user, body.model_dump())
+
+    @app.post("/api/game/world/districts", status_code=201)
+    def world_district(body: DistrictIn, conn=Depends(db), user=Depends(need("world.manage"))):
+        with _lock:
+            return worldmaps.create_district(conn, user, body.model_dump())
+
+    @app.get("/api/game/connections")
+    def world_connections(conn=Depends(db), _=Depends(need("asset.read"))):
+        return worldmaps.connections(conn)
+
+    @app.post("/api/game/maps", status_code=201)
+    def world_map_create(body: MapIn, conn=Depends(db), user=Depends(need("world.manage"))):
+        with _lock:
+            return worldmaps.create_map(conn, user, body.model_dump())
+
+    @app.get("/api/game/maps/{map_id}")
+    def world_map(map_id: str, conn=Depends(db), _=Depends(need("asset.read"))):
+        return worldmaps.map_detail(conn, map_id)
+
+    @app.put("/api/game/maps/{map_id}/draft")
+    def world_map_draft(map_id: str, body: MapDraftIn, conn=Depends(db), user=Depends(need("world.manage"))):
+        with _lock:
+            return worldmaps.save_draft(conn, user, map_id, body.model_dump())
+
+    @app.post("/api/game/maps/{map_id}/publish")
+    def world_map_publish(map_id: str, body: MapPublishIn | None = None, conn=Depends(db), user=Depends(need("world.publish"))):
+        with _lock:
+            return worldmaps.publish(conn, user, map_id, body.note if body else "")
+
+    @app.get("/api/game/maps/{map_id}/versions/{version}")
+    def world_map_version(map_id: str, version: int, conn=Depends(db), _=Depends(need("asset.read"))):
+        return worldmaps.map_version(conn, map_id, version)
+
+    @app.post("/api/game/maps/{map_id}/restore")
+    def world_map_restore(map_id: str, body: MapRestoreIn, conn=Depends(db), user=Depends(need("world.manage"))):
+        with _lock:
+            return worldmaps.restore(conn, user, map_id, body.version)
+
+    @app.post("/api/game/maps/{map_id}/disable")
+    def world_map_disable(map_id: str, conn=Depends(db), user=Depends(need("world.publish"))):
+        with _lock:
+            return worldmaps.set_status(conn, user, map_id, "disabled")
+
+    @app.post("/api/game/maps/{map_id}/enable")
+    def world_map_enable(map_id: str, conn=Depends(db), user=Depends(need("world.publish"))):
+        with _lock:
+            return worldmaps.set_status(conn, user, map_id, "published")
 
     @app.get("/api/game/settings")
     def game_settings(conn=Depends(db), _=Depends(need("asset.read"))):

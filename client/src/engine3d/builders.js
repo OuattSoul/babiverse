@@ -8,6 +8,8 @@ import { paintGround } from './groundPainter.js';
 import { canvasTexture, mat } from './materials.js';
 import { placeIcon } from '../world/icons.js';
 import { buildAtelierBuilding, buildAtelierProp, buildAtelierSurface } from './atelierBuilders.js';
+import { castShadows } from './quality.js';
+import { kitBuilding, kitLamp, kitPlants, kitVehicle, PLANT_CELLS } from './cityKit.js';
 
 const geoCache = new Map();
 function geo(key, make) {
@@ -82,7 +84,7 @@ function paintFacade(ctx, facade, base) {
  * orientation (S : façade côté +z, N : côté -z) et enseigne facultative.
  */
 export function buildBuilding(b) {
-  if (b.atelier) return buildAtelierBuilding(b);
+  if (b.atelier) return castShadows(buildAtelierBuilding(b));
   const cw = b.x1 - b.x0 + 1;
   const cd = b.y1 - b.y0 + 1;
   const w = cw - INSET;
@@ -93,6 +95,8 @@ export function buildBuilding(b) {
   const counts = {};
   for (const ch of b.facade) if (FACADE[ch]) counts[FACADE[ch]] = (counts[FACADE[ch]] || 0) + 1;
   const base = Object.entries(counts).sort((a, c) => c[1] - a[1])[0]?.[0] || '#efe3c8';
+  const kit = kitBuilding(b, { roof: ROOF[b.roof], wall: base, awning: b.sign?.bg });
+  if (kit) return castShadows(dressKitBuilding(b, g, kit));
 
   const front = new THREE.MeshLambertMaterial({ map: canvasTexture(cw * PX, FH, (ctx) => paintFacade(ctx, b.facade, base)) });
   front.userData.owned = true;
@@ -135,6 +139,27 @@ export function buildBuilding(b) {
   }
   g.userData.kind = 'building';
   // Matériaux propres au bâtiment : il peut devenir transparent s'il cache le joueur.
+  g.userData.fadeMaterials = fade;
+  return castShadows(g);
+}
+
+/** Bâtiment en modèle du kit : tourné si sa façade donne au nord, enseigne au-dessus de la porte. */
+function dressKitBuilding(b, g, kit) {
+  const holder = new THREE.Group();
+  if (b.facing === 'N') holder.rotation.y = Math.PI;
+  holder.add(kit.group);
+  const fade = [...kit.materials];
+  if (b.sign) {
+    const own = 'owner' in b;
+    const text = own ? b.sign.text : placeIcon(b);
+    const sw = own ? Math.min(b.facade.length - INSET - 0.2, 0.35 + text.length * 0.12) : 0.62;
+    const sign = signBoard(text, b.sign.bg, b.sign.fg, sw, own ? 0.22 : 0.3);
+    sign.position.set(kit.door, Math.min(kit.height * 0.62, WALL_H - 0.16), kit.front + 0.06);
+    holder.add(sign);
+    fade.push(...sign.material.filter((m) => m.userData.owned));
+  }
+  g.add(holder);
+  g.userData.kind = 'building';
   g.userData.fadeMaterials = fade;
   return g;
 }
@@ -225,7 +250,11 @@ const CELL_BUILDERS = {
 
 function buildCells(zone) {
   const g = new THREE.Group();
+  // Manguiers, palmiers et buissons du kit : maillages instanciés (gardés hors de la fusion du décor).
+  const plants = kitPlants((ch) => cellsOf(zone.map, ch));
+  if (plants) g.add(plants);
   for (const [ch, make] of Object.entries(CELL_BUILDERS)) {
+    if (plants && PLANT_CELLS.includes(ch)) continue;
     for (const [x, y] of cellsOf(zone.map, ch)) {
       const obj = make(zone.map, x, y);
       obj.position.set(x + 0.5, 0, y + 0.5);
@@ -327,6 +356,8 @@ const PROP_BUILDERS = {
     return g;
   },
   taxi: () => {
+    const kit = kitVehicle('taxi');
+    if (kit) return kit;
     const g = new THREE.Group();
     g.add(mesh(boxGeo(1.8, 0.4, 0.85), flat('#f39c12'), 0, 0.37, 0));
     g.add(mesh(boxGeo(1.0, 0.32, 0.78), mat('#2c3e50'), -0.1, 0.73, 0));
@@ -336,6 +367,8 @@ const PROP_BUILDERS = {
   },
   // Taxi communal : vert, bande blanche.
   woroworo: () => {
+    const kit = kitVehicle('woroworo');
+    if (kit) return kit;
     const g = new THREE.Group();
     g.add(mesh(boxGeo(1.8, 0.4, 0.85), flat('#27ae60'), 0, 0.37, 0));
     g.add(mesh(boxGeo(1.82, 0.08, 0.87), mat('#ecf0f1'), 0, 0.42, 0));
@@ -344,6 +377,8 @@ const PROP_BUILDERS = {
     return g;
   },
   voiture: (state, def) => {
+    const kit = kitVehicle('voiture', def.color);
+    if (kit) return kit;
     const g = new THREE.Group();
     g.add(mesh(boxGeo(1.8, 0.38, 0.85), flat(def.color || '#c0392b'), 0, 0.36, 0));
     g.add(mesh(boxGeo(0.95, 0.3, 0.76), mat('#34495e'), -0.15, 0.7, 0));
@@ -365,6 +400,8 @@ const PROP_BUILDERS = {
     return g;
   },
   gbaka: () => {
+    const kit = kitVehicle('gbaka');
+    if (kit) return kit;
     const g = new THREE.Group();
     g.add(mesh(boxGeo(2.8, 0.95, 0.92), flat('#ecf0f1'), 0, 0.62, 0));
     g.add(mesh(boxGeo(2.82, 0.12, 0.94), mat('#2980b9'), 0, 0.5, 0));
@@ -463,6 +500,13 @@ const PROP_BUILDERS = {
     return g;
   },
   lamp: () => {
+    const kit = kitLamp();
+    if (kit) {
+      // Tête allumée la nuit (matériau partagé LAMP, voir setNight) au bout du bras du modèle.
+      const g = new THREE.Group();
+      g.add(kit.group, mesh(boxGeo(0.2, 0.06, 0.14), LAMP, kit.head.x, kit.head.y, kit.head.z));
+      return g;
+    }
     const g = new THREE.Group();
     g.add(mesh(cylGeo(0.035, 0.05, 2.1, 6), mat('#5d6d7e'), 0, 1.05, 0));
     g.add(mesh(boxGeo(0.06, 0.05, 0.45), mat('#5d6d7e'), 0, 2.08, 0.2));
@@ -611,7 +655,7 @@ export function buildProp(def, state = {}) {
   g.position.set(def.tile[0] + (def.w || 1) / 2, 0, def.tile[1] + (def.h || 1) / 2);
   if (def.rot) g.rotation.y = (def.rot * Math.PI) / 180;
   g.userData.kind = 'prop';
-  return g;
+  return castShadows(g);
 }
 
 /**
@@ -624,13 +668,16 @@ function mergeStatic(statics) {
   const keep = [];
   statics.traverse((o) => {
     if (!o.isMesh) return;
-    if (Array.isArray(o.material) || o.name === 'ground' || o.name === 'outer') { keep.push(o); return; }
+    if (Array.isArray(o.material) || o.isInstancedMesh || o.name === 'ground' || o.name === 'outer') { keep.push(o); return; }
     const g = o.geometry.clone().applyMatrix4(o.matrixWorld);
-    // Uniformise les attributs (certaines géométries n'ont pas d'UV) pour pouvoir fusionner.
-    for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
+    // Uniformise les attributs (certaines géométries n'ont pas d'UV) pour pouvoir fusionner ; un matériau
+    // texturé (modèles du kit) garde ses UV, regroupé à part de ses éventuelles géométries sans UV.
+    const uv = !!o.material.map && !!g.attributes.uv;
+    for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && !(uv && name === 'uv')) g.deleteAttribute(name);
     const geo = g.index ? g.toNonIndexed() : g;
-    if (!byMaterial.has(o.material)) byMaterial.set(o.material, []);
-    byMaterial.get(o.material).push(geo);
+    const key = `${o.material.uuid}|${uv}`;
+    if (!byMaterial.has(key)) byMaterial.set(key, { material: o.material, geos: [] });
+    byMaterial.get(key).geos.push(geo);
   });
   const out = new THREE.Group();
   for (const o of keep) {
@@ -640,7 +687,7 @@ function mergeStatic(statics) {
     world.decompose(o.position, o.quaternion, o.scale);
     out.add(o);
   }
-  for (const [material, geos] of byMaterial) {
+  for (const { material, geos } of byMaterial.values()) {
     const merged = mergeGeometries(geos);
     for (const g of geos) g.dispose();
     out.add(new THREE.Mesh(merged, material));
@@ -720,6 +767,8 @@ export function buildZone(zone, propState) {
   const wires = buildWires(zone.props || []);
   if (wires) details.add(wires);
   group.add(details);
+  // Fusion faite : les maillages fusionnés sont marqués à leur tour (le sol reçoit seulement).
+  castShadows(group);
   return { group, props, details };
 }
 

@@ -64,7 +64,7 @@ export interface Taxonomy {
   kits: Record<string, KitSpec>; genders: Record<string, string>;
   behaviors: Record<string, BehaviorSpec>; permissions: Record<string, string>;
   roles: Record<string, { label: string; permissions: string[] }>; media_categories: Record<string, string>;
-  limits: { upload_mb: number; import_mb: number; image_px: number };
+  limits: { upload_mb: number; import_mb: number; image_px: number; model_mb?: number };
 }
 export interface User { id: number; username: string; role: string; role_label: string; permissions: string[]; dev?: boolean; active?: boolean }
 export interface CatalogEntry { asset_id: string; technical_name: string; category: string; family: Family; version: number; definition: AssetDefinition; pins: Pins | null }
@@ -76,13 +76,17 @@ export interface World { id: string; name: string; description: string; width: n
 export interface SceneSummary { id: string; name: string; description: string; width: number; height: number; instances: number; updated_at: number; created_by: string }
 
 export interface Media {
-  id: string; name: string; filename: string; kind: "svg" | "raster"; mime: string; size: number; sha256: string;
+  id: string; name: string; filename: string; kind: "svg" | "raster" | "model"; mime: string; size: number; sha256: string;
   width: number; height: number; tags: string[]; category: string; revision: number; archived: boolean;
   created_by: string; created_at: number; updated_at: number; url: string;
   meta: { view_box?: number[]; colors?: Record<string, number>; channels?: Record<string, string>; recolorable?: boolean;
-          has_back_layer?: boolean; warnings?: string[]; removed?: Record<string, number> };
+          has_back_layer?: boolean; warnings?: string[]; removed?: Record<string, number>;
+          // modèles 3D (GLB / glTF) : dimensions en unités du modèle (1 unité = 1 case à l'échelle 1), objets nommés
+          format?: string; bbox?: number[]; size?: number[]; triangles?: number; materials?: number; textures?: number;
+          objects?: { name: string; node: number; box: number[]; unique: boolean }[] };
 }
 export interface MediaDetail extends Media {
+  map_usage?: { map_id: string; name: string; status: string; uses: { where: string; revision: number | null }[] }[];
   usage: { asset_id: string; technical_name: string; name: string; family: Family; version: number; status: string; archived: boolean; pinned_revision: number | null }[];
   revisions: { revision: number; filename: string; size: number; created_by: string; created_at: number; url: string }[];
 }

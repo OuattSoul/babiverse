@@ -10,8 +10,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
-  // Fichiers versionnés (/assets/*) : cache d'abord. Le reste : réseau d'abord, cache en secours.
-  if (url.pathname.startsWith('/assets/')) {
+  // Fichiers versionnés (/assets/*, modèles /models/*?v=) : cache d'abord. Le reste : réseau d'abord, cache en secours.
+  if (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/models/')) {
     event.respondWith(caches.match(event.request).then((hit) => hit || fetch(event.request).then((res) => {
       const copy = res.clone();
       caches.open(CACHE).then((c) => c.put(event.request, copy));

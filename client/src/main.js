@@ -4,6 +4,10 @@ import { World3D } from './engine3d/World3D.js';
 import { initControls, touchInput } from './engine3d/input.js';
 import { actions } from './game/actions.js';
 import { applyPack } from './atelier/pack.js';
+import { cityKitReady, loadCityKit } from './engine3d/cityKit.js';
+import { characterKitReady, loadCharacterKit } from './engine3d/characterKit.js';
+import { mapInfo } from './world/maps.js';
+import { WORLD_SOURCE } from './world/zones.js';
 import { social } from './social/social.js';
 import { api, auth } from './net/api.js';
 import { bus, store } from './state/store.js';
@@ -22,6 +26,9 @@ let account = null;
 async function boot() {
   loadingScreen();
   topbar.clearAccount();
+  // Modèles 3D de la ville et personnages animés : téléchargés pendant la connexion, attendus au plus 8 s.
+  loadCityKit();
+  loadCharacterKit();
   try {
     store.config = await api.config();
     // Contenu de l'atelier (garde-robe, habitants, maison) : facultatif, le jeu garde le sien sans lui.
@@ -45,6 +52,7 @@ async function boot() {
     let state = (await api.state()).state;
     if (!state) state = await creationScreen(account.username);
     store.apply(state);
+    await Promise.all([cityKitReady(8000), characterKitReady(8000)]);
   } catch (err) {
     if (err.status === 401) return sessionLost();
     return errorScreen(`Impossible de joindre le serveur (${err.message}). Vérifie ta connexion.`, boot);
@@ -125,6 +133,10 @@ function startGame() {
       prompt: () => world.current?.action?.label || null,
       stand: (id) => world.standPoint(id),
       goTo: (x, y) => world.walkTo({ x, y }),
+      // Chemin de construction des zones ('catalogue' ou 'historique') et carte courante du catalogue.
+      worldSource: WORLD_SOURCE,
+      perf: () => world.perfStats(),
+      map: () => mapInfo(world.zoneId),
     };
   }
 }

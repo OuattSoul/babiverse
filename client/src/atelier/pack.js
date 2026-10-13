@@ -6,6 +6,8 @@ import { setCityDecorator, ZONES } from '../world/zones.js';
 import { homeZone } from './home.js';
 import { cityWithPlacements } from './world.js';
 import { cityWithout } from '../world/removal.js';
+import { dataZone, usableMap, withEntrances } from '../world/dataMaps.js';
+import { builtinMapIds, setAtelierMaps } from '../world/maps.js';
 
 export const MAX_ROAMERS = 24; // habitants nommés en plus des PNJ ; les autres ne servent qu'aux passants
 const PANTS = '#2c3e50';
@@ -16,6 +18,8 @@ export const atelier = {
   /** Pièces de la garde-robe par identifiant d'asset (silhouettes, vêtements, visage). */
   byId: new Map(),
   roamers: [],
+  /** Cartes publiées par l'atelier, installées dans ZONES. */
+  maps: [],
 };
 
 // Contenu d'origine, restauré par resetPack (tests).
@@ -44,15 +48,26 @@ export function applyPack(pack) {
   if (pack.home?.interior) {
     try { ZONES.maison = homeZone(pack.home); } catch { /* plan illisible : on garde le studio d'origine */ }
   }
+  // Cartes publiées par l'atelier (autres quartiers, communes, villes) : une zone chacune, chargée à la demande
+  // par World3D ; une carte inutilisable (identifiant réservé, données incomplètes) est ignorée.
+  const maps = (pack.maps || []).filter((m) => usableMap(m, builtinMapIds()));
+  atelier.maps = [];
+  for (const m of maps) {
+    try { ZONES[m.id] = dataZone(m); atelier.maps.push(m.id); } catch { /* carte illisible : ignorée */ }
+  }
+  setAtelierMaps(maps.filter((m) => atelier.maps.includes(m.id)));
+  const reachable = maps.filter((m) => atelier.maps.includes(m.id));
   // Carte du jeu de l'atelier : éléments d'origine retirés, puis éléments placés (bâtiments et leurs intérieurs,
-  // objets, véhicules, surfaces) — un élément peut prendre la place d'un élément retiré.
-  if (pack.placements?.length || pack.removals?.length) {
+  // objets, véhicules, surfaces) — un élément peut prendre la place d'un élément retiré — puis accès aux cartes.
+  if (pack.placements?.length || pack.removals?.length || reachable.some((m) => m.entrance)) {
     setCityDecorator((city) => {
       const cleared = cityWithout(city, pack.removals || []);
       const { zone, interiors } = cityWithPlacements(cleared.zone, pack.placements || []);
-      zone.atelier = { ...(zone.atelier || {}), removed: cleared.removed, refused: cleared.refused };
+      const entrances = withEntrances(zone, reachable);
+      const out = entrances.zone;
+      out.atelier = { ...(zone.atelier || {}), removed: cleared.removed, refused: cleared.refused, entrances: entrances.skipped };
       Object.assign(ZONES, interiors);
-      return zone;
+      return out;
     });
   }
   return true;
@@ -130,5 +145,8 @@ export function resetPack() {
   for (const [id, look] of Object.entries(ORIGINAL.looks)) NPCS[id].look = look;
   ZONES.maison = ORIGINAL.maison;
   for (const id of Object.keys(ZONES)) if (id.startsWith('int_atl_')) delete ZONES[id];
+  for (const id of atelier.maps || []) delete ZONES[id];
+  atelier.maps = [];
+  setAtelierMaps([]);
   setCityDecorator(null);
 }

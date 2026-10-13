@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { characterViews, pickView } from '../src/atelier/views.js';
+import { characterViews } from '../src/atelier/views.js';
 import { placeIcon } from '../src/world/icons.js';
 import { BUILDINGS } from '../src/world/city.js';
 
@@ -50,18 +50,6 @@ describe('vues des personnages de l’atelier', () => {
     const ids = (svg) => [...svg.matchAll(/id="([^"]+)"/g)].map((m) => m[1]);
     const all = [...ids(v.front), ...ids(v.back), ...ids(v.side)];
     expect(new Set(all).size).toBe(all.length);
-  });
-
-  it('choix de la vue selon le cap et la caméra', () => {
-    expect(pickView(0)).toEqual({ view: 'front', mirror: false });
-    expect(pickView(Math.PI)).toEqual({ view: 'back', mirror: false });
-    expect(pickView(Math.PI / 2)).toEqual({ view: 'side', mirror: false });
-    expect(pickView(-Math.PI / 2)).toEqual({ view: 'side', mirror: true });
-    expect(pickView(3 * Math.PI / 2)).toEqual({ view: 'side', mirror: true });
-    // près de 45°, la vue en cours est gardée (pas de clignotement)
-    expect(pickView(Math.PI / 4 + 0.05, 'front').view).toBe('front');
-    expect(pickView(Math.PI / 4 + 0.05, 'side').view).toBe('side');
-    expect(pickView(Math.PI / 4 + 0.2, 'front').view).toBe('side');
   });
 });
 

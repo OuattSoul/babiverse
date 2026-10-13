@@ -14,6 +14,7 @@ import re
 from datetime import timedelta
 
 from django.db import transaction
+from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
@@ -222,6 +223,25 @@ def password_reset(request):
 @permission_classes([AllowAny])
 def config(request):
     return Response(rules.public_config())
+
+
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@throttle_classes([])
+def atelier_model(request, media_id, revision):
+    """Modèle 3D (GLB / glTF) d'une carte publiée par l'atelier, relayé au navigateur (même origine que le jeu).
+    Seuls les fichiers annoncés par le pack en vigueur sont servis ; une révision ne change jamais (cache long)."""
+    try:
+        item = atelier.model_file(media_id, revision)
+    except atelier.ModelUnavailable:
+        return Response({"ok": False, "error": {"code": "unavailable", "message": "Modèle momentanément indisponible."}},
+                        status=503, headers={"Retry-After": "30", "Cache-Control": "no-store"})
+    if not item:
+        return Response({"ok": False, "error": {"code": "not_found", "message": "Modèle introuvable."}}, status=404)
+    data, mime = item
+    return HttpResponse(data, content_type=mime, headers={"Cache-Control": "public, max-age=31536000, immutable",
+                                                          "X-Content-Type-Options": "nosniff"})
 
 
 @api_view(["GET"])

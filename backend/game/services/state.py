@@ -2,7 +2,9 @@
 import logging
 import re
 
-from game import atelier, rules
+from django.core.cache import cache
+
+from game import atelier, maps, rules
 from game.clock import virtual_day
 from game.models import Character, Home, Player, PlotClaim
 
@@ -106,6 +108,22 @@ def private_interior_allowed(char, zone):
     return allowed
 
 
+def _in_order(char, pos) -> bool:
+    """Ignore une position plus ancienne que la dernière appliquée pour le même onglet (`pos.c`, horodatage `pos.t`) :
+    une requête lente (battement de cœur, rencontres) ne doit pas ramener le joueur dans la zone qu'il vient de
+    quitter. Sans horodatage (anciens clients), la position est appliquée comme avant."""
+    t, cid = pos.get("t"), pos.get("c")
+    if not isinstance(t, (int, float)) or isinstance(t, bool) or not isinstance(cid, str) or not cid:
+        return True
+    key = f"babiverse:pos:{char.pk}"
+    last = cache.get(key)
+    if last and last[0] == cid[:40] and t < last[1]:
+        log.info("position périmée ignorée char=%s", char.pk)
+        return False
+    cache.set(key, (cid[:40], t), 6 * 3600)
+    return True
+
+
 def apply_position(char, data):
     """Mémorise la zone et la position rapportées par le client (validées grossièrement).
 
@@ -116,7 +134,12 @@ def apply_position(char, data):
     if not isinstance(pos, dict):
         return
     zone, x, y = pos.get("zone"), pos.get("x"), pos.get("y")
+    if not _in_order(char, pos):
+        return
     if not rules.zone_known(zone) or not private_interior_allowed(char, zone):
+        return
+    if not maps.entry_allowed(char, char.zone, zone):
+        log.warning("passage refusé %s → %s char=%s", char.zone, zone, char.pk)
         return
     char.zone = zone
     # La carte de la ville n'a pas de taille fixe (elle grandit avec son contenu) : seule une borne

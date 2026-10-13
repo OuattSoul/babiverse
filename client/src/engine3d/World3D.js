@@ -16,7 +16,7 @@ import { PLAYER_BUILDINGS, PLOTS } from '../world/city.js';
 import { buildSelectables, navigationOf, npcSelectables, pickSelectable, resolveTap } from '../world/selectables.js';
 import { describeSelection } from '../world/selection.js';
 import { adTracking } from '../game/adTracking.js';
-import { setResidentialBlocks, ZONES, zoneById } from '../world/zones.js';
+import { resolveZoneRequest, setResidentialBlocks, ZONES, zoneById } from '../world/zones.js';
 import { freeLots, homeBuildings, lotSelectables } from '../world/residential.js';
 import { exitSpawnOf, interiorIdOf } from '../world/interiors.js';
 import { KioskCustomers, Npc } from './actors.js';
@@ -25,34 +25,48 @@ import { CityAmbient } from './ambient.js';
 import { buildBuilding, buildFreeLots, buildProp, buildZone, makeMarker, makeRing, setNight } from './builders.js';
 import { CameraRig } from './CameraRig.js';
 import { clamp, inputToWorld, outdoorZoomFor, ZOOM } from './cameraMath.js';
-import { animateCharacter, buildCharacter, faceTowards, setCharacterNight } from './character.js';
+import { animateCharacter, buildCharacter, faceTowards, setDiscShadows } from './character.js';
+import { setAnimationViewer } from './characterKit.js';
+import { quality, qualityFor, shadowExtent, snapToTexel, tooSlow } from './quality.js';
 import { roamerDefs } from '../atelier/pack.js';
 import { keyboardVector, touchInput } from './input.js';
 import { disposeGroup, iconSprite, mat, textSprite } from './materials.js';
 import { placeIcon } from '../world/icons.js';
+import { buildLandscapes, detachLandscapes } from './landscapes.js';
+import { modelCache } from './modelCache.js';
+import { prefetchPlan } from '../world/dataMaps.js';
 
 const SPEED = 115; // px/s
 const BODY = { hw: 7, hh: 5 };
 const SCAN_MS = 100;
-const MARKER_Y = { npc: 1.95, door: 1.55, default: 1.4 };
+const SMOOTH_GRACE_MS = 10000;
+const MARKER_Y = { npc: 2.3, door: 1.75, default: 1.6 };
 // Niveaux de détail selon la distance de la caméra (unités) : petit mobilier et noms des habitants
 // de près, étiquettes des lieux de loin (elles grossissent avec la distance pour rester lisibles).
 const LOD = { details: 30, npcNames: 34, labelsFrom: 22, labelsFull: 30, labelY: 2.15 };
 const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const isMobile = matchMedia('(pointer: coarse)').matches;
+// Direction du soleil (de la cible vers le soleil) : il suit la caméra, l'angle des ombres reste le même.
+const SUN_DIR = new THREE.Vector3(-12, 20, 8).normalize();
 
 export class World3D {
   constructor(container) {
     this.container = container;
     this.ui = ui;
     actions.scene = this;
-    this.renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: 'low-power' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
+    // Anticrénelage fixé au lancement ; finesse, ombres et cadence suivent l'économie de batterie (applyQuality).
+    const q = qualityFor({ dpr: window.devicePixelRatio, mobile: isMobile, saver: quality.saver });
+    this.renderer = new THREE.WebGLRenderer({ antialias: q.antialias, powerPreference: 'high-performance' });
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.append(this.renderer.domElement);
     this.scene = new THREE.Scene();
     this.hemi = new THREE.HemisphereLight(0xfff4e0, 0x6b5a45, 1.2);
     this.sun = new THREE.DirectionalLight(0xffffff, 1.5);
-    this.sun.position.set(-12, 20, 8);
+    this.sun.position.copy(SUN_DIR).multiplyScalar(25);
+    this.sun.shadow.mapSize.set(q.shadowMapSize, q.shadowMapSize);
+    this.sun.shadow.bias = -0.0005;
+    this.sun.shadow.normalBias = 0.03;
+    this.shadowExtent = 0;
     this.scene.add(this.hemi, this.sun, this.sun.target);
     this.rig = new CameraRig(this.renderer.domElement, {
       onTap: (x, y) => this.onTap(x, y),
@@ -67,7 +81,8 @@ export class World3D {
     // Fermeture d'une fiche : la sélection disparaît, le contrôle revient au joueur.
     bus.on('sheet-closed', () => { this.selected = null; });
     window.addEventListener('resize', () => this.resize());
-    this.resize();
+    bus.on('quality', () => this.applyQuality());
+    this.applyQuality();
     this.last = performance.now();
     this.renderer.setAnimationLoop(() => this.frame());
   }
@@ -75,6 +90,7 @@ export class World3D {
   // --- Zones ----------------------------------------------------------------------
   loadZone(zoneId, { spawn, pos } = {}) {
     if (this.zoneGroup) {
+      detachLandscapes(this.landscapes);
       this.remotes?.clear();
       this.customers?.destroy();
       this.ambient?.destroy();
@@ -82,13 +98,28 @@ export class World3D {
       disposeGroup(this.zoneGroup);
     }
     setResidentialBlocks(this.residentialBlocks());
-    this.zone = this.zoneById(zoneId) || ZONES.quartier;
+    // Zone introuvable (carte de l'atelier retirée ou indisponible) : Cité Akwaba, point de départ, message.
+    const req = resolveZoneRequest(zoneId, this.playerBuildingList(), { spawn, pos });
+    if (req.fallback) ui.toast("Ce lieu n'est plus accessible : retour à la Cité Akwaba.", "error", 3500);
+    ({ spawn, pos } = req);
+    this.zone = req.zone;
     this.zoneId = this.zone.id;
+    this.fpsSamples = [];
+    // Premières secondes d'une zone lentes (shaders, premières images) : pas de mesure de fluidité.
+    this.smoothFrom = performance.now() + SMOOTH_GRACE_MS;
     this.fronts = new Map();
     this.grid = buildGrid(this.zone, this.playerBuildingRects());
     this.worldKey = null;
     const built = buildZone(this.zone, (def) => this.propState(def));
     this.zoneGroup = built.group;
+    // Paysages 3D (cartes publiées par l'atelier) : posés tout de suite, modèles chargés en arrière-plan.
+    // Les modèles qu'aucune zone chargée n'utilise plus sont libérés.
+    this.landscapes = this.zone.landscapes?.length
+      ? buildLandscapes(this.zone, modelCache, { origin: pos ? [pos.x / TILE, pos.y / TILE] : this.spawnTile(this.zone, spawn), onError: () => ui.toast("Un élément du décor n'a pas pu être chargé.", 'error', 2500) })
+      : null;
+    modelCache.release(this.landscapes?.urls || []);
+    if (this.landscapes) this.zoneGroup.add(this.landscapes.group);
+    this.schedulePrefetch();
     this.props = built.props;
     this.details = built.details;
     for (const p of this.props) p.object.userData.key = JSON.stringify(this.propState(p.def));
@@ -147,6 +178,30 @@ export class World3D {
     this.renderer.compile(this.scene, this.rig.camera);
     ui.toast(this.zone.name, 'zone', 1800);
     bus.emit('zone', this.zoneId);
+  }
+
+  /**
+   * Préchargement discret des modèles des cartes voisines (cache HTTP seulement), une fois la zone affichée et le
+   * navigateur au repos. Rien n'est demandé depuis une zone sans passage vers une carte de l'atelier.
+   */
+  schedulePrefetch() {
+    const plan = prefetchPlan(this.zone, (id) => this.zoneById(id), { cached: (u) => modelCache.has(u), connection: navigator.connection || null });
+    this.prefetched = this.prefetched || new Set();
+    const todo = plan.filter((u) => !this.prefetched.has(u));
+    if (!todo.length) return;
+    const run = () => { for (const u of todo) { this.prefetched.add(u); fetch(u, { priority: 'low' }).catch(() => this.prefetched.delete(u)); } };
+    (window.requestIdleCallback || ((f) => setTimeout(f, 1500)))(run, { timeout: 4000 });
+  }
+
+  /** Mesures de rendu et de chargement (debug, tests de performance). */
+  perfStats() {
+    const info = this.renderer.info;
+    return {
+      zone: this.zoneId, fps: this.fpsValue, shadows: this.sun.castShadow, pixelRatio: this.renderer.getPixelRatio(), drawCalls: info.render.calls, triangles: info.render.triangles,
+      geometries: info.memory.geometries, textures: info.memory.textures,
+      models: { ...modelCache.stats, cached: modelCache.size() }, landscapes: this.landscapes ? { ...this.landscapes.status, done: undefined } : null,
+      prefetched: [...(this.prefetched || [])],
+    };
   }
 
   /** Icône d'un lieu au-dessus de son toit (à la place de son nom), affichée quand la caméra est éloignée. */
@@ -216,10 +271,10 @@ export class World3D {
 
   createPlayer(spawn, pos) {
     const start = this.resolveSpawn(spawn, pos);
-    const model = buildCharacter({ ...store.state.character.appearance, pants: '#2c3e50' });
+    const model = buildCharacter({ ...store.state.character.appearance, pants: '#2c3e50' }, { hd: true });
     model.rotation.y = spawn?.startsWith('from_') ? 0 : Math.PI;
     const pkg = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.2, 0.22), mat('#b9770e'));
-    pkg.position.set(0, 1.32, 0);
+    pkg.position.set(0, model.userData.kit ? 1.72 : 1.32, 0); // colis porté sur la tête
     pkg.visible = false;
     model.add(pkg);
     this.zoneGroup.add(model);
@@ -231,7 +286,7 @@ export class World3D {
   refreshPlayerLook() {
     const p = this.player;
     if (!p) return;
-    const model = buildCharacter({ ...store.state.character.appearance, pants: '#2c3e50' });
+    const model = buildCharacter({ ...store.state.character.appearance, pants: '#2c3e50' }, { hd: true });
     model.rotation.y = p.model.rotation.y;
     model.add(p.pkg);
     p.model.removeFromParent();
@@ -249,13 +304,21 @@ export class World3D {
   // --- Boucle ------------------------------------------------------------------------
   frame() {
     const now = performance.now();
+    // Économie de batterie : une image sur deux environ (30 par seconde).
+    if (this.quality.maxFps && now - this.last < 1000 / this.quality.maxFps - 2) return;
     const dt = Math.min(now - this.last, 50) / 1000;
     this.last = now;
     this.time += dt * 1000;
     this.frames++;
-    if (now - this.fpsAt >= 1000) { this.fpsValue = (this.frames * 1000) / (now - this.fpsAt); this.frames = 0; this.fpsAt = now; }
+    if (now - this.fpsAt >= 1000) {
+      this.fpsValue = (this.frames * 1000) / (now - this.fpsAt);
+      this.frames = 0;
+      this.fpsAt = now;
+      this.watchSmoothness();
+    }
     if (!this.zoneGroup || document.hidden) return;
 
+    setAnimationViewer(this.rig.camera.position);
     this.movePlayer(dt);
     for (const npc of this.npcs) npc.update(this.time, dt, this.grid);
     this.remotes.update(dt, this.rig.cur.dist < LOD.npcNames);
@@ -277,6 +340,7 @@ export class World3D {
     this.animateMarkers(dt);
     this.rig.update(dt, { x: this.player.body.x / TILE, z: this.player.body.y / TILE });
     this.updateLod();
+    this.updateSun();
     this.updateCompass();
     this.renderer.render(this.scene, this.rig.camera);
   }
@@ -310,7 +374,7 @@ export class World3D {
     const len = dir ? Math.hypot(dir.x, dir.z) : 0;
     if (store.modalOpen || this.transitioning || len < 0.01) {
       p.speed = 0;
-      animateCharacter(p.model, dt, 0);
+      animateCharacter(p.model, dt, 0, true);
       return;
     }
     const scale = (len > 1 ? 1 / len : 1) * (dir.arrive ?? 1);
@@ -328,7 +392,7 @@ export class World3D {
     const moved = Math.hypot(p.body.x - before.x, p.body.y - before.y);
     p.speed = moved / Math.max(dt, 1e-3) / SPEED;
     faceTowards(p.model, dir.x, dir.z, dt);
-    animateCharacter(p.model, dt, p.speed);
+    animateCharacter(p.model, dt, p.speed, true);
     this.syncPlayer();
     store.pos.x = p.body.x;
     store.pos.y = p.body.y;
@@ -454,9 +518,11 @@ export class World3D {
    */
   transitionTo(zone, spawn, onLoaded) {
     if (this.transitioning) return;
+    // Destination indisponible (carte désactivée depuis le chargement du pack…) : on reste sur place.
+    if (!this.zoneById(zone)) { ui.toast('Ce passage est fermé pour le moment.', 'error', 2500); return; }
     this.transitioning = true;
     ui.setPrompt(null);
-    const [tx, ty] = this.spawnTile(this.zoneById(zone) || ZONES.quartier, spawn);
+    const [tx, ty] = this.spawnTile(this.zoneById(zone), spawn);
     store.pos = { zone, x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE };
     api.sync({ ...store.pos }).then((res) => store.apply(res.state)).catch(() => {});
     fade(true);
@@ -476,7 +542,7 @@ export class World3D {
 
   floatText(x, y, text) {
     const s = textSprite(text, { size: 26 });
-    s.position.set(x / TILE, 1.6, y / TILE);
+    s.position.set(x / TILE, 2.0, y / TILE);
     s.userData.born = this.time;
     this.zoneGroup.add(s);
     this.floating.push(s);
@@ -733,7 +799,7 @@ export class World3D {
     this.floating = this.floating.filter((s) => {
       const t = (this.time - s.userData.born) / 1400;
       if (t >= 1) { s.removeFromParent(); s.material.map.dispose(); s.material.dispose(); return false; }
-      s.position.y = 1.6 + t * 0.8;
+      s.position.y = 2.0 + t * 0.8;
       s.material.opacity = 1 - t;
       return true;
     });
@@ -780,8 +846,9 @@ export class World3D {
     const k = this.zone.outdoor ? phase.darkness : 0;
     this.hemi.intensity = 1.25 * (1 - k * 0.6);
     this.sun.intensity = 1.5 * (1 - k * 0.8);
+    this.night = k > 0.6; // la nuit, le soleil n'a plus d'ombre
+    this.updateShadows();
     setNight(k);
-    setCharacterNight(k);
     this.hemi.color.set('#fff4e0').lerp(new THREE.Color('#9db4ff'), k * 1.5);
     if (this.zone.outdoor) {
       const sky = new THREE.Color('#a8d8f0').lerp(new THREE.Color('#1b2a4a'), k * 1.8);
@@ -796,6 +863,60 @@ export class World3D {
   updateCompass() {
     const needle = document.getElementById('compass-needle');
     if (needle) needle.style.transform = `rotate(${(this.rig.cur.yaw * 180) / Math.PI}deg)`;
+  }
+
+  /** Économie de batterie (Réglages) ou lancement : finesse de l'image, ombres, cadence. */
+  applyQuality() {
+    this.quality = qualityFor({ dpr: window.devicePixelRatio, mobile: isMobile, saver: quality.saver });
+    this.shadowsDropped = false;
+    this.fpsSamples = [];
+    this.renderer.setPixelRatio(this.quality.pixelRatio);
+    this.resize();
+    this.updateShadows();
+  }
+
+  /** Ombres du soleil allumées si la qualité le permet et qu'il fait jour ; sinon disque sous les personnages. */
+  updateShadows() {
+    const on = !!this.quality?.shadows && !this.night && !this.shadowsDropped;
+    setDiscShadows(!on);
+    if (this.renderer.shadowMap.enabled === on && this.sun.castShadow === on) return;
+    this.renderer.shadowMap.enabled = on;
+    this.sun.castShadow = on;
+    // Les matériaux déjà compilés doivent l'être à nouveau avec (ou sans) les ombres.
+    this.scene.traverse((o) => {
+      if (!o.material) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.needsUpdate = true;
+    });
+  }
+
+  /** Appareil trop lent pour les ombres (mesuré en jeu, hors chargement de zone) : elles sont coupées pour la session. */
+  watchSmoothness() {
+    if (!this.sun.castShadow || this.transitioning || document.hidden || performance.now() < this.smoothFrom) { this.fpsSamples = []; return; }
+    this.fpsSamples.push(this.fpsValue);
+    if (this.fpsSamples.length > 30) this.fpsSamples.shift();
+    if (!tooSlow(this.fpsSamples)) return;
+    this.shadowsDropped = true;
+    this.updateShadows();
+    ui.toast('Ombres coupées pour garder le jeu fluide (⚙️ Réglages → Économie de batterie).', 'info', 4000);
+  }
+
+  /**
+   * Le soleil suit le point visé par la caméra ; la zone couverte par les ombres grandit avec le dézoom.
+   * Position arrondie à la taille d'un pixel d'ombre pour qu'elles ne scintillent pas en marchant.
+   */
+  updateSun() {
+    if (!this.sun.castShadow) return;
+    const extent = shadowExtent(this.rig.cur.dist);
+    if (extent !== this.shadowExtent) {
+      this.shadowExtent = extent;
+      Object.assign(this.sun.shadow.camera, { left: -extent, right: extent, top: extent, bottom: -extent, near: 1, far: extent * 2 + 60 });
+      this.sun.shadow.camera.updateProjectionMatrix();
+    }
+    const t = this.rig.cur.target;
+    const x = snapToTexel(t.x, extent, this.quality.shadowMapSize);
+    const z = snapToTexel(t.z, extent, this.quality.shadowMapSize);
+    this.sun.target.position.set(x, 0, z);
+    this.sun.position.copy(SUN_DIR).multiplyScalar(extent + 30).add(this.sun.target.position);
   }
 
   resize() {

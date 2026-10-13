@@ -15,6 +15,7 @@ import { assemblyView, behaviorsView, dashboardView, historyView, reviewView, se
 import { settingsView, transferView, usersView } from "./views/admin";
 import { gameView } from "./views/game";
 import { gameMapView } from "./views/gameMap";
+import { worldView } from "./views/world";
 
 const app = document.getElementById("app")!;
 let cleanup: (() => void) | null = null;
@@ -39,7 +40,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     { hash: "#/modulaire/composants", label: "Composants modulaires", perm: "asset.read" },
     { hash: "#/comportements", label: "Interactions et comportements", perm: "asset.read" },
     { hash: "#/variantes", label: "Variantes et thèmes", perm: "asset.read" } ] },
-  { group: "Monde", items: [{ hash: "#/carte", label: "Carte de test" }, { hash: "#/jeu", label: "Intégration au jeu", perm: "asset.read" }, { hash: "#/jeu/carte", label: "Carte du jeu", perm: "asset.read" }] },
+  { group: "Monde", items: [{ hash: "#/carte", label: "Carte de test" }, { hash: "#/jeu", label: "Intégration au jeu", perm: "asset.read" }, { hash: "#/jeu/carte", label: "Carte du jeu", perm: "asset.read" }, { hash: "#/monde", label: "Villes et cartes", perm: "asset.read" }] },
   { group: "Cycle de vie", items: [
     { hash: "#/validation", label: "Validation et publication", perm: "asset.read" },
     { hash: "#/historique", label: "Versions et historique", perm: "asset.read" },
@@ -105,6 +106,7 @@ async function route() {
       case "variantes": await variantsView(main); break;
       case "carte": case "ville": r = await cityView(main); break;
       case "jeu": if (path[1] === "carte") r = await gameMapView(main); else await gameView(main); break;
+      case "monde": r = await worldView(main, path); break;
       case "validation": await reviewView(main); break;
       case "historique": case "publications": await historyView(main); break;
       case "transferts": case "imports": await transferView(main); break;

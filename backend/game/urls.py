@@ -14,6 +14,7 @@ urlpatterns = [
     path("auth/password/reset", views.password_reset),
     path("config", views.config),
     path("atelier/pack", views.atelier_pack),
+    path("atelier/models/<str:media_id>/<int:revision>", views.atelier_model),
     path("state", views.state),
     path("character", views.character),
     path("character/appearance", views.appearance),

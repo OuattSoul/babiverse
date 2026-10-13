@@ -1,6 +1,7 @@
 // Aperçu 3D du personnage sur l'écran de création (il tourne lentement sur lui-même).
 import * as THREE from 'three';
-import { buildCharacter } from './character.js';
+import { animateCharacter, buildCharacter } from './character.js';
+import { loadCharacterKit } from './characterKit.js';
 import { disposeGroup } from './materials.js';
 
 export function createPreview(canvas) {
@@ -16,19 +17,27 @@ export function createPreview(canvas) {
   camera.position.set(0, 0.9, 3);
   camera.lookAt(0, 0.55, 0);
   let model = null;
+  let look = null;
   let running = true;
+  let last = performance.now();
   const loop = () => {
     if (!running) return;
-    if (model) model.rotation.y += 0.012;
+    const now = performance.now();
+    if (model) {
+      model.rotation.y += 0.012;
+      animateCharacter(model, Math.min(0.05, (now - last) / 1000), 0, true); // personnage animé : respiration au repos
+    }
+    last = now;
     renderer.render(scene, camera);
     requestAnimationFrame(loop);
   };
   loop();
-  return {
-    setLook(look) {
+  const api = {
+    setLook(next) {
+      look = next;
       const angle = model?.rotation.y ?? 0.4;
       if (model) { scene.remove(model); disposeGroup(model); }
-      model = buildCharacter(look);
+      model = buildCharacter(look, { hd: true });
       model.rotation.y = angle;
       scene.add(model);
     },
@@ -38,4 +47,7 @@ export function createPreview(canvas) {
       renderer.forceContextLoss(); // libère le contexte WebGL (le navigateur en limite le nombre)
     },
   };
+  // Personnages animés arrivés après l'ouverture de l'aperçu : il est refait avec eux.
+  loadCharacterKit().then((ok) => { if (ok && running && look) api.setLook(look); });
+  return api;
 }

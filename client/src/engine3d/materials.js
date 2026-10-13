@@ -71,6 +71,7 @@ export function disposeGroup(group) {
   group.traverse((o) => {
     if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose();
     if (o.isSprite && !o.userData.sharedMaterial) { o.material.map?.dispose(); o.material.dispose(); }
-    for (const m of [].concat(o.material || [])) if (m.userData?.owned) { m.map?.dispose(); m.dispose(); }
+    // sharedMap : matériau propre à l'objet mais palette partagée (modèles du kit), la texture reste.
+    for (const m of [].concat(o.material || [])) if (m.userData?.owned) { if (!m.userData.sharedMap) m.map?.dispose(); m.dispose(); }
   });
 }

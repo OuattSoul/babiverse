@@ -1,0 +1,12 @@
+Modèles 3D de la ville — kits de Kenney (www.kenney.nl), licence Creative Commons Zero (CC0 1.0)
+http://creativecommons.org/publicdomain/zero/1.0/
+Utilisation libre, y compris commerciale ; mention de l'auteur appréciée mais non obligatoire.
+
+maisons/    City Kit (Suburban) 2.0   — https://kenney.nl/assets/city-kit-suburban
+commerces/  City Kit (Commercial) 2.1 — https://kenney.nl/assets/city-kit-commercial
+vehicules/  Car Kit                   — https://kenney.nl/assets/car-kit
+rue/        City Kit (Roads)          — https://kenney.nl/assets/city-kit-roads
+nature/     Nature Kit                — https://kenney.nl/assets/nature-kit
+
+Fichiers repris tels quels ; le jeu repeint les couleurs (toits, murs, carrosseries) en recolorant
+la palette (Textures/colormap.png) au chargement. Voir client/src/engine3d/cityKit.js.

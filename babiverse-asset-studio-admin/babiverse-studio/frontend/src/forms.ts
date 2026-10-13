@@ -94,6 +94,7 @@ export function renderSection(spec: SectionSpec, def: AssetDefinition, onChange:
 
 export function mediaThumb(m: Media | undefined, size = 56): HTMLElement {
   if (!m) return h("span", { class: "media-thumb empty-thumb", style: { width: `${size}px`, height: `${size}px` } }, "—");
+  if (m.kind === "model") return h("span", { class: "media-thumb model-thumb", style: { width: `${size}px`, height: `${size}px` }, title: m.name }, "3D");
   return h("span", { class: "media-thumb", style: { width: `${size}px`, height: `${size}px` } }, h("img", { src: m.url, alt: m.name, loading: "lazy" }));
 }
 

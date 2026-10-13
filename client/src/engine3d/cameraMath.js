@@ -2,14 +2,17 @@
 // Repère : x vers l'est, z vers le sud (= y de la grille), y vers le haut. 1 unité = 1 case.
 
 export const LIMITS = {
-  pitchMin: 0.5, // ~29° au-dessus de l'horizon
+  pitchMin: 0.38, // ~22° au-dessus de l'horizon (vue proche, derrière le personnage)
   pitchMax: 1.4, // presque vue de dessus
   distMin: 5,
   distMax: 30,
 };
 
-// Zoom initial en pourcentage de la plage : 0 = vue la plus éloignée, 1 = vue la plus proche.
-export const INITIAL_ZOOM = 0.25;
+// Caméra de départ proche, derrière le joueur (vue « à la troisième personne ») : les personnages, grands,
+// occupent l'écran ; on dézoome jusqu'à la vue d'ensemble.
+export const START_DIST = { outdoor: 7, indoor: 6.5 };
+// Hauteur visée au-dessus du sol : la poitrine des personnages plutôt que leurs pieds.
+export const TARGET_Y = 0.9;
 
 /** Distance correspondant à un pourcentage de zoom dans la plage { min, max }. */
 export const distForZoom = (range, zoom) => range.max - zoom * (range.max - range.min);
@@ -18,8 +21,8 @@ export const distForZoom = (range, zoom) => range.max - zoom * (range.max - rang
 const OUTDOOR = { min: 5, max: 62, overview: 50 };
 const INDOOR = { min: 5, max: 18 };
 export const ZOOM = {
-  outdoor: { ...OUTDOOR, default: distForZoom(OUTDOOR, INITIAL_ZOOM) },
-  indoor: { ...INDOOR, default: distForZoom(INDOOR, INITIAL_ZOOM) },
+  outdoor: { ...OUTDOOR, default: START_DIST.outdoor },
+  indoor: { ...INDOOR, default: START_DIST.indoor },
 };
 
 /**

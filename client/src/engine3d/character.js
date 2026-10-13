@@ -1,11 +1,14 @@
 // Personnages low-poly articulés (joueur, PNJ, clients) avec animation de marche procédurale.
-// Une apparence composée dans l'atelier (`look.svg` ou `look.studio`) est un pantin articulé découpé dans ses vues
-// SVG (face, dos, profil) : il se voit de tous les côtés et marche (jambes et bras qui balancent) comme le modèle 3D.
+// Une apparence composée dans l'atelier (`look.svg` ou `look.studio`) devient un personnage en volume : ses vues
+// SVG (face, dos, profil) sont projetées sur des formes rondes articulées qui marchent comme le modèle 3D.
 import * as THREE from 'three';
-import { svgDataUrl } from '../atelier/compose.js';
+import { composeCharacter, svgDataUrl } from '../atelier/compose.js';
 import { atelier, svgCharacter } from '../atelier/pack.js';
-import { characterViews, pickView, SIDE_BODY } from '../atelier/views.js';
+import { characterViews } from '../atelier/views.js';
+import { alphaSpans, ATLAS_W, loftPiece, pieceRows, PIECES, VIEW_H, VIEW_W } from './characterVolume.js';
 import { mat } from './materials.js';
+import { castShadows } from './quality.js';
+import { animateKit, characterKit, kitCharacter } from './characterKit.js';
 
 const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 const HAIR = '#1b1b1b';
@@ -20,172 +23,124 @@ function limb(geometry, material, pivotY, offsetX) {
   return pivot;
 }
 
-// --- Personnages de l'atelier (pantins articulés) ------------------------------------------
-// Trois vues composées à partir des mêmes composants (atelier/views.js) : face, dos (en miroir) et profil
-// (tourné vers la droite, en miroir pour la gauche). La vue suit l'angle entre le cap du personnage et la
-// caméra, comme le modèle 3D qu'on voit de face, de dos ou de côté selon qu'il vient, s'en va ou passe.
-// Chaque vue est rastérisée puis découpée en cinq pièces (tronc et tête, deux bras, deux jambes) posées sur
-// des plans toujours tournés vers la caméra (rotation autour de la verticale seulement). Chaque membre pivote
-// à l'épaule ou à la hanche : à l'arrêt, les pièces se recomposent exactement en l'image de la vue.
+// --- Personnages de l'atelier (volumes articulés) -----------------------------------------
+// Trois vues composées à partir des mêmes composants (atelier/views.js) : face, dos et profil. Elles sont
+// rastérisées une fois par apparence dans un atlas (face | dos | profil), dont on lit les silhouettes pour
+// construire cinq volumes (characterVolume.js) : tronc et tête, deux bras, deux jambes, chacun suspendu à
+// l'épaule ou à la hanche. Les vues sont projetées sur ces volumes, éclairés comme le reste de la scène :
+// le personnage a une vraie épaisseur sous tous les angles et marche comme le modèle 3D.
 // Repère SVG 0 0 200 380 : pieds à y ≈ 362, sommet du crâne à y ≈ 22 → même taille que le modèle 3D (0,95).
 const UNIT = 0.95 / 340;
 const FEET_Y = 362;
-const RES = 1.2; // pixels de texture par unité SVG
-// Les bras débordent de 2 unités sur la zone retirée du tronc : pas de fente à la jointure (filtrage de texture).
-const grow = ([x0, y0, x1, y1], d) => [x0 - d, y0 - d, x1 + d, y1 + d];
-const thin = (x) => 100 + (x - 100) * SIDE_BODY; // abscisse de face → abscisse de profil (corps aminci)
-const thinRect = ([x0, y0, x1, y1]) => [thin(x0), y0, thin(x1), y1];
+const RES = 1.5; // pixels de texture par unité SVG
+const STEP = 4; // hauteur d'une rangée du volume (unités SVG)
 
-// Pièces d'une vue. rect [x0, y0, x1, y1] et pivot [x, y] dans le repère SVG de la vue ; joint : abscisse où
-// le pivot est posé (défaut : celle du pivot) ; z : ordre d'affichage ; at : place dans l'atlas (une texture
-// par vue), pièces espacées de 4 unités ; swing : amplitude de la marche (rad).
-function frontPieces() {
-  const ARM_L = [20, 116, 70, 280];
-  const ARM_R = [130, 116, 180, 280];
-  const cut = [ARM_L, ARM_R];
-  return {
-    legL: { rect: [0, 230, 100, 380], pivot: [86, 236], z: -0.004, cut, at: [0, 246], swing: 0.34 },
-    legR: { rect: [100, 230, 200, 380], pivot: [114, 236], z: -0.004, cut, at: [104, 246], swing: -0.34 },
-    torso: { rect: [0, 0, 200, 242], pivot: [100, 236], z: 0, cut, at: [0, 0] },
-    armL: { rect: grow(ARM_L, 2), pivot: [64, 128], z: 0.004, cut: [], at: [208, 0], swing: -0.16 },
-    armR: { rect: grow(ARM_R, 2), pivot: [136, 128], z: 0.004, cut: [], at: [266, 0], swing: 0.16 },
-  };
+// Projection des trois vues : poids par sommet (face, dos, profil) ; le dos est un tiers plus loin dans l'atlas.
+function projectViews(shader) {
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\nattribute vec2 uvSide;\nattribute vec3 viewWeight;\nvarying vec2 vUvSide;\nvarying vec3 vViewWeight;')
+    .replace('#include <uv_vertex>', '#include <uv_vertex>\nvUvSide = uvSide;\nvViewWeight = viewWeight;');
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\nvarying vec2 vUvSide;\nvarying vec3 vViewWeight;')
+    .replace('#include <map_fragment>', `diffuseColor *= vViewWeight.x * texture2D(map, vMapUv)
+      + vViewWeight.y * texture2D(map, vMapUv + vec2(${(1 / 3).toFixed(7)}, 0.0))
+      + vViewWeight.z * texture2D(map, vUvSide);`);
 }
-function sidePieces() {
-  // De profil, jambes et bras sont l'un derrière l'autre au milieu du corps : ils balancent d'avant en arrière
-  // dans le plan de l'image (vraie marche de profil), avec plus d'amplitude ; le bras éloigné passe derrière.
-  const ARM_L = thinRect([20, 116, 70, 280]);
-  const ARM_R = thinRect([130, 116, 180, 280]);
-  const cut = [ARM_L, ARM_R];
-  return {
-    legL: { rect: [0, 230, 100, 380], pivot: [thin(86), 236], joint: 100, z: -0.006, cut, at: [0, 246], swing: 0.42 },
-    legR: { rect: [100, 230, 200, 380], pivot: [thin(114), 236], joint: 100, z: -0.004, cut, at: [104, 246], swing: -0.42 },
-    torso: { rect: [0, 0, 200, 242], pivot: [100, 236], z: 0, cut, at: [0, 0] },
-    armL: { rect: grow(ARM_L, 2), pivot: [thin(64), 128], joint: 99, z: -0.008, cut: [], at: [208, 0], swing: -0.38 },
-    armR: { rect: grow(ARM_R, 2), pivot: [thin(136), 128], joint: 101, z: 0.004, cut: [], at: [244, 0], swing: 0.38 },
-  };
-}
-const VIEWS = {
-  front: { pieces: frontPieces() },
-  back: { pieces: frontPieces(), mirror: true },
-  side: { pieces: sidePieces() },
-};
-const ATLAS = [320, 400];
-for (const view of Object.values(VIEWS)) {
-  for (const piece of Object.values(view.pieces)) {
-    const { rect: [x0, y0, x1, y1], pivot: [px, py], at: [ax, ay] } = piece;
-    const g = new THREE.PlaneGeometry((x1 - x0) * UNIT, (y1 - y0) * UNIT);
-    g.translate(((x0 + x1) / 2 - px) * UNIT, (py - (y0 + y1) / 2) * UNIT, 0);
-    // coordonnées de texture : la pièce dans l'atlas (v = 1 en haut du canvas)
-    const [u0, u1] = [ax / ATLAS[0], (ax + x1 - x0) / ATLAS[0]];
-    const [v0, v1] = [1 - (ay + y1 - y0) / ATLAS[1], 1 - ay / ATLAS[1]];
-    const uv = g.attributes.uv;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * (u1 - u0), v0 + uv.getY(i) * (v1 - v0));
-    g.userData.shared = true;
-    piece.geometry = g;
-  }
-}
-const puppets = new Map(); // SVG d'une vue → matériau (atlas) partagé par tous les personnages identiques
-let night = 0;
 
-// Vues de dos et de profil rastérisées à la demande (première fois qu'elles servent), une à la fois :
-// l'entrée en ville ne paie que les vues de face. En attendant, le pantin garde la vue précédente.
+const models = new Map(); // SVG des trois vues → { material, geometries, waiting } partagé par les personnages identiques
+
+// Apparences préparées une à la fois (rastérisation + lecture des silhouettes) : l'entrée en ville reste fluide.
 const queue = [];
 let loading = false;
-function requestView(material) {
-  if (material.userData.state) return;
-  material.userData.state = 'queued';
-  queue.push(material);
-  pump();
-}
 function pump() {
   if (loading || !queue.length) return;
   loading = true;
-  queue.shift().userData.load(() => { loading = false; pump(); });
+  prepare(queue.shift()).finally(() => { loading = false; pump(); });
 }
 
-function puppetMaterial(svg, view, lazy = false) {
-  const known = puppets.get(svg);
-  if (known) return known;
+const loadImage = (svg) => new Promise((ok, ko) => {
+  const img = new Image();
+  img.onload = () => ok(img);
+  img.onerror = ko;
+  img.src = svgDataUrl(svg);
+});
+
+async function prepare(model) {
+  let images;
+  try {
+    images = await Promise.all([model.svgs.front, model.svgs.back, model.svgs.side].map(loadImage));
+  } catch {
+    model.waiting = null; // apparence illisible : le personnage reste invisible (seule l'ombre)
+    return;
+  }
   const atlas = document.createElement('canvas');
-  atlas.width = ATLAS[0] * RES;
-  atlas.height = Math.round(ATLAS[1] * RES);
+  atlas.width = ATLAS_W * RES;
+  atlas.height = VIEW_H * RES;
+  const ctx = atlas.getContext('2d', { willReadFrequently: true });
+  images.forEach((img, i) => ctx.drawImage(img, i * VIEW_W * RES, 0, VIEW_W * RES, VIEW_H * RES));
+  let span;
+  let cutout = false;
+  try {
+    span = alphaSpans(ctx.getImageData(0, 0, atlas.width, atlas.height).data, atlas.width, RES);
+  } catch {
+    // canvas illisible (navigateur qui le considère « souillé ») : volumes aux bornes des pièces, détourés
+    // par la transparence de l'image
+    span = (_view, _y, x0, x1) => [x0, x1];
+    cutout = true;
+  }
+  const geometries = {};
+  for (const [name, piece] of Object.entries(PIECES)) {
+    const mesh = loftPiece(pieceRows(piece, span, STEP), piece, { step: STEP });
+    if (!mesh) continue;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(mesh.position.map((v) => v * UNIT), 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(mesh.uv, 2));
+    g.setAttribute('uvSide', new THREE.Float32BufferAttribute(mesh.uvSide, 2));
+    g.setAttribute('viewWeight', new THREE.Float32BufferAttribute(mesh.weight, 3));
+    g.setIndex(mesh.index);
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    g.userData.shared = true;
+    geometries[name] = g;
+  }
   const tex = new THREE.CanvasTexture(atlas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const material = new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.4, side: THREE.DoubleSide });
-  material.color.setScalar(1 - night);
-  material.visible = false; // jusqu'au chargement de l'image
-  material.userData.load = (done) => {
-    material.userData.state = 'loading';
-    const img = new Image();
-    img.onload = () => {
-      // Une seule rastérisation du SVG (retourné pour le dos), puis copie de chaque pièce à sa place dans l'atlas.
-      const full = document.createElement('canvas');
-      full.width = 200 * RES;
-      full.height = 380 * RES;
-      const fctx = full.getContext('2d');
-      if (view.mirror) { fctx.translate(full.width, 0); fctx.scale(-1, 1); }
-      fctx.drawImage(img, 0, 0, full.width, full.height);
-      const ctx = atlas.getContext('2d');
-      for (const { rect: [x0, y0, x1, y1], cut, at: [ax, ay] } of Object.values(view.pieces)) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(ax * RES, ay * RES, (x1 - x0) * RES, (y1 - y0) * RES);
-        ctx.clip();
-        ctx.drawImage(full, (ax - x0) * RES, (ay - y0) * RES);
-        // les bras sont des pièces à part : on les retire du tronc et des jambes
-        for (const [bx0, by0, bx1, by1] of cut) ctx.clearRect((ax + bx0 - x0) * RES, (ay + by0 - y0) * RES, (bx1 - bx0) * RES, (by1 - by0) * RES);
-        ctx.restore();
-      }
-      tex.needsUpdate = true;
-      material.visible = true;
-      material.userData.state = 'ready';
-      done?.();
-    };
-    img.onerror = () => { material.userData.state = 'failed'; done?.(); };
-    img.src = svgDataUrl(svg);
-  };
-  if (!lazy) material.userData.load();
-  puppets.set(svg, material);
-  return material;
+  tex.anisotropy = 4;
+  const material = new THREE.MeshLambertMaterial({
+    map: tex,
+    alphaTest: cutout ? 0.4 : 0,
+    side: cutout ? THREE.DoubleSide : THREE.FrontSide,
+  });
+  material.onBeforeCompile = projectViews;
+  material.customProgramCacheKey = () => 'babi-volume';
+  model.material = material;
+  model.geometries = geometries;
+  const waiting = model.waiting;
+  model.waiting = null;
+  for (const attach of waiting) attach(model);
 }
 
-const _pos = new THREE.Vector3();
-const _cam = new THREE.Vector3();
-const _parent = new THREE.Quaternion();
-const _yaw = new THREE.Quaternion();
-const _fwd = new THREE.Vector3();
-const UP = new THREE.Vector3(0, 1, 0);
-
-/**
- * Une fois par image, juste avant le rendu : tourne le pantin vers la caméra (autour de la verticale) et
- * affiche la vue qui correspond à l'angle entre son cap et la caméra (face, dos, profil gauche ou droit).
- */
-function faceCamera(puppet, renderer, camera) {
-  const { holder } = puppet;
-  const frame = renderer.info.render.frame;
-  if (holder.userData.frame === frame) return;
-  holder.userData.frame = frame;
-  holder.parent.getWorldPosition(_pos);
-  camera.getWorldPosition(_cam);
-  const toward = Math.atan2(_cam.x - _pos.x, _cam.z - _pos.z);
-  _yaw.setFromAxisAngle(UP, toward);
-  holder.parent.getWorldQuaternion(_parent);
-  _fwd.set(0, 0, 1).applyQuaternion(_parent); // regard du personnage (+z local)
-  const pick = pickView(Math.atan2(_fwd.x, _fwd.z) - toward, puppet.view);
-  const ready = puppet.materials[pick.view].userData.state === 'ready';
-  if (!ready) requestView(puppet.materials[pick.view]);
-  if (ready && (pick.view !== puppet.view || pick.mirror !== puppet.mirror)) {
-    for (const [name, group] of Object.entries(puppet.views)) group.visible = name === pick.view;
-    puppet.views.side.scale.x = pick.mirror ? -1 : 1;
-    puppet.view = pick.view;
-    puppet.mirror = pick.mirror;
+function volumeModel(svgs) {
+  const key = `${svgs.front}\n${svgs.back}\n${svgs.side}`;
+  let model = models.get(key);
+  if (!model) {
+    model = { svgs, material: null, geometries: null, waiting: [] };
+    models.set(key, model);
+    queue.push(model);
+    pump();
   }
-  holder.quaternion.copy(_parent.invert().multiply(_yaw));
-  holder.updateMatrixWorld(true);
+  return model;
 }
 
 const composed = new WeakMap();
+
+// Vue de face SVG d'une apparence de l'atelier (visage et vêtements reportés sur le personnage animé).
+const fronts = new Map();
+function frontView(props) {
+  const key = JSON.stringify(props);
+  if (!fronts.has(key)) fronts.set(key, composeCharacter(props, atelier.pack.parts, { idPrefix: 'k' }).svg);
+  return fronts.get(key);
+}
 
 function buildSvgCharacter(props) {
   // SVG des vues composés une fois par définition (les passants réutilisent les habitants)
@@ -193,49 +148,66 @@ function buildSvgCharacter(props) {
   if (!svgs) { svgs = characterViews(props, atelier.pack.parts); composed.set(props, svgs); }
   const g = new THREE.Group();
   const holder = new THREE.Group();
-  // joints : ceux de la vue de face (tests) ; all : ceux de toutes les vues (animés ensemble)
-  const puppet = { holder, views: {}, materials: {}, joints: null, all: [], view: 'front', mirror: false };
-  for (const [viewName, view] of Object.entries(VIEWS)) {
-    const material = puppetMaterial(svgs[viewName], view, viewName !== 'front');
-    puppet.materials[viewName] = material;
-    const group = new THREE.Group();
-    group.visible = viewName === 'front';
-    const joints = {};
-    for (const [name, piece] of Object.entries(view.pieces)) {
-      const { pivot: [px, py], joint: jx = px, z } = piece;
-      const joint = new THREE.Group();
-      joint.position.set((jx - 100) * UNIT, (FEET_Y - py) * UNIT, z);
-      joint.userData.swing = piece.swing || 0;
-      const mesh = new THREE.Mesh(piece.geometry, material);
-      mesh.onBeforeRender = (renderer, _scene, camera) => faceCamera(puppet, renderer, camera);
-      joint.add(mesh);
-      group.add(joint);
-      joints[name] = joint;
-      puppet.all.push(joint);
-    }
-    holder.add(group);
-    puppet.views[viewName] = group;
-    if (viewName === 'front') puppet.joints = joints;
+  // joints : épaules et hanches (animés), ready : volumes posés (apparence préparée)
+  const puppet = { holder, joints: {}, all: [], ready: false };
+  for (const [name, piece] of Object.entries(PIECES)) {
+    const [px, py] = piece.pivot;
+    const joint = new THREE.Group();
+    joint.position.set((px - 100) * UNIT, (FEET_Y - py) * UNIT, 0);
+    joint.userData.swing = piece.swing || 0;
+    holder.add(joint);
+    puppet.joints[name] = joint;
+    puppet.all.push(joint);
   }
-  g.add(holder);
-  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.26, 16), SHADOW);
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = 0.01;
-  g.add(shadow);
+  const attach = (model) => {
+    for (const [name, geometry] of Object.entries(model.geometries)) puppet.joints[name].add(castShadows(new THREE.Mesh(geometry, model.material)));
+    puppet.ready = true;
+  };
+  const model = volumeModel(svgs);
+  if (model.geometries) attach(model);
+  else model.waiting?.push(attach);
+  g.add(holder, disc());
   g.userData.puppet = puppet;
   g.userData.phase = 0;
   return g;
 }
 
-/** Assombrit les personnages de l'atelier la nuit (leurs plans ne reçoivent pas l'éclairage). */
-export function setCharacterNight(darkness) {
-  night = Math.min(0.55, darkness * 0.6);
-  for (const m of puppets.values()) m.color.setScalar(1 - night);
+// Habitants habillés quelques-uns par image (~6 ms) : l'entrée dans une zone n'attend pas leurs textures.
+const dressQueue = [];
+let dressing = false;
+function pumpDress() {
+  const start = performance.now();
+  while (dressQueue.length && performance.now() - start < 6) dressQueue.shift()();
+  if (dressQueue.length) requestAnimationFrame(pumpDress);
+  else dressing = false;
 }
+const inScene = (o) => { while (o.parent) o = o.parent; return o.isScene; };
 
-/** Construit un personnage (~0,95 unité de haut, pieds en y = 0, regard vers +z). */
-export function buildCharacter(look) {
+/**
+ * Construit un personnage (pieds en y = 0, regard vers +z) : animé (Kenney, 1,35 de haut) habillé d'après la
+ * tenue, sinon en volumes (0,95). Le groupe rendu est stable (position, rotation, étiquettes) ; le corps animé
+ * d'un habitant y arrive un peu plus tard (`hd` : joueur et aperçu, tout de suite et en texture fine).
+ */
+export function buildCharacter(look, { hd = false } = {}) {
   const svgProps = svgCharacter(look);
+  const pieceOf = (key) => atelier.byId.get(String(key).split('@')[0]) || null;
+  const dress = () => kitCharacter(look, svgProps, pieceOf, svgProps ? frontView(svgProps) : null, hd);
+  if (characterKit.ready) {
+    if (hd) return castShadows(dress().add(disc()));
+    const g = new THREE.Group();
+    g.add(disc());
+    g.userData.dressing = true;
+    dressQueue.push(() => {
+      if (!inScene(g)) return; // zone quittée entre-temps
+      const kit = dress();
+      for (const c of [...kit.children]) g.add(c);
+      g.userData.kit = kit.userData.kit;
+      g.userData.dressing = false;
+      castShadows(g);
+    });
+    if (!dressing) { dressing = true; requestAnimationFrame(pumpDress); }
+    return g;
+  }
   if (svgProps) return buildSvgCharacter(svgProps);
   const skin = mat(look.skin || '#c68642');
   const outfit = mat(look.outfit || '#e67e22');
@@ -280,29 +252,35 @@ export function buildCharacter(look) {
     }
   }
 
-  // Ombre portée simplifiée (disque) : bien moins coûteux que des ombres temps réel.
-  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.26, 16), SHADOW);
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = 0.01;
-  g.add(shadow);
+  g.add(disc());
 
   g.userData.limbs = { legL, legR, armL, armR };
   g.userData.phase = 0;
-  return g;
+  return castShadows(g);
 }
 
+// Disque sombre sous les pieds : remplace l'ombre du soleil quand elle est coupée (économie de batterie).
 const SHADOW = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25, depthWrite: false });
+export function setDiscShadows(on) { SHADOW.visible = on; }
+function disc() {
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.26, 16), SHADOW);
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = 0.01;
+  return shadow;
+}
 
 /** Anime la marche : balancement des jambes et des bras proportionnel à la vitesse. */
-export function animateCharacter(g, dt, speed) {
+export function animateCharacter(g, dt, speed, near = false) {
+  if (g.userData.kit) { animateKit(g, dt, speed, near); return; }
+  if (g.userData.dressing) return; // corps animé pas encore arrivé
   const moving = speed > 0.05;
   if (g.userData.puppet) {
-    // Pantin : jambes en ciseaux, bras en opposition (toutes les vues), léger appui à chaque pas ; repos à l'arrêt.
+    // Volumes : jambes et bras balancent d'avant en arrière en opposition, léger appui à chaque pas ; repos à l'arrêt.
     const { all, holder } = g.userData.puppet;
     g.userData.phase += dt * (moving ? 9 * Math.min(1.4, speed) : 0);
     const s = moving ? Math.sin(g.userData.phase) : 0;
     const k = Math.min(1, dt * 14);
-    for (const j of all) if (j.userData.swing) j.rotation.z += (s * j.userData.swing - j.rotation.z) * k;
+    for (const j of all) if (j.userData.swing) j.rotation.x += (s * j.userData.swing - j.rotation.x) * k;
     holder.position.y += ((moving ? Math.abs(Math.cos(g.userData.phase)) * 0.018 : 0) - holder.position.y) * k;
     return;
   }

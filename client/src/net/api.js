@@ -43,6 +43,16 @@ export const isOnline = () => online;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Ordre des positions : chaque requête qui porte `pos` est horodatée par cet onglet (horloge croissante) ; le serveur
+// ignore une position plus ancienne qu'une autre déjà appliquée pour le même onglet (requête lente arrivée après un
+// changement de zone : battement de cœur, rencontres).
+export const CLIENT_ID = Math.random().toString(36).slice(2, 12);
+const posClock = () => Math.round((performance.timeOrigin || 0) + performance.now());
+export function stampPos(body) {
+  if (!body || typeof body !== 'object' || !body.pos || typeof body.pos !== 'object') return body;
+  return { ...body, pos: { ...body.pos, t: posClock(), c: CLIENT_ID } };
+}
+
 /**
  * Envoie une requête. Les actions critiques reçoivent une clé d'idempotence unique,
  * réutilisée à l'identique pour chaque nouvelle tentative : le serveur ne l'appliquera qu'une fois.
@@ -51,6 +61,7 @@ export async function request(method, path, body, { idempotent = false, keepaliv
   const headers = { 'Content-Type': 'application/json' };
   if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
   if (idempotent) headers['Idempotency-Key'] = newKey();
+  body = stampPos(body); // horodaté une fois : les nouvelles tentatives gardent le même instant
 
   let lastError;
   for (let attempt = 0; attempt < retries; attempt++) {

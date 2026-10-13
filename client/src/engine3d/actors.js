@@ -20,7 +20,7 @@ export class Npc {
     world.zoneGroup.add(this.model);
     if (name) {
       this.label = textSprite(name, { size: 24 });
-      this.label.position.y = 1.45;
+      this.label.position.y = 1.85;
       this.model.add(this.label);
     }
     this.target = null;

@@ -88,6 +88,18 @@ export const api = {
   media: (params: Record<string, string | boolean> = {}) => call<Media[]>("GET", "/api/media?" + qs(params as any)),
   mediaDetail: (id: string) => call<MediaDetail>("GET", `/api/media/${id}`),
   mediaSvg: (id: string) => call<{ svg: string }>("GET", `/api/media/${id}/svg`),
+  // monde du jeu : villes, zones, cartes (backend/app/worldmaps.py)
+  worldMaps: () => call<any>("GET", "/api/game/world"),
+  createCity: (body: { id: string; name: string; description?: string }) => call<any>("POST", "/api/game/world/cities", body),
+  createDistrict: (body: { id: string; city_id: string; name: string; description?: string }) => call<any>("POST", "/api/game/world/districts", body),
+  mapVersion: (id: string, v: number) => call<any>("GET", `/api/game/maps/${encodeURIComponent(id)}/versions/${v}`),
+  restoreMap: (id: string, version: number) => call<any>("POST", `/api/game/maps/${encodeURIComponent(id)}/restore`, { version }),
+  mapConnections: () => call<any>("GET", "/api/game/connections"),
+  createMap: (body: { id: string; district_id: string; name: string; width?: number; height?: number; ground?: string }) => call<any>("POST", "/api/game/maps", body),
+  mapDetail: (id: string) => call<any>("GET", `/api/game/maps/${encodeURIComponent(id)}`),
+  saveMapDraft: (id: string, draft: unknown) => call<any>("PUT", `/api/game/maps/${encodeURIComponent(id)}/draft`, draft),
+  publishMap: (id: string, note = "") => call<any>("POST", `/api/game/maps/${encodeURIComponent(id)}/publish`, { note }),
+  setMapStatus: (id: string, enabled: boolean) => call<any>("POST", `/api/game/maps/${encodeURIComponent(id)}/${enabled ? "enable" : "disable"}`),
   uploadMedia: (file: Blob, filename: string, opts: { name?: string; category?: string; tags?: string } = {}) =>
     upload<Media>("/api/media?" + qs({ filename, ...opts }), file),
   replaceMedia: (id: string, file: Blob, filename: string) => upload<Media>(`/api/media/${id}/replace?` + qs({ filename }), file),

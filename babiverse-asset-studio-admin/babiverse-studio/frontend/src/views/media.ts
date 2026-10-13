@@ -5,19 +5,19 @@ import { openAsset } from "./editorParts";
 
 export async function mediaView(root: HTMLElement) {
   const q = h("input", { type: "search", placeholder: "Nom, fichier ou étiquette…", "aria-label": "Rechercher" }) as HTMLInputElement;
-  const kind = h("select", { "aria-label": "Type" }, [["", "Tous types"], ["svg", "SVG"], ["raster", "Images (PNG, WebP…)"]].map(([k, l]) => h("option", { value: k }, l))) as HTMLSelectElement;
+  const kind = h("select", { "aria-label": "Type" }, [["", "Tous types"], ["svg", "SVG"], ["raster", "Images (PNG, WebP…)"], ["model", "Modèles 3D (GLB, glTF)"]].map(([k, l]) => h("option", { value: k }, l))) as HTMLSelectElement;
   const cat = h("select", { "aria-label": "Classement" }, h("option", { value: "" }, "Tous classements"), Object.entries(ctx.tax!.media_categories).map(([k, l]) => h("option", { value: k }, l))) as HTMLSelectElement;
   const arch = h("input", { type: "checkbox" }) as HTMLInputElement;
   const grid = h("div", { class: "media-lib" });
   const detail = h("aside", { class: "media-detail" });
-  const files = h("input", { type: "file", multiple: true, accept: ".svg,image/svg+xml,image/png,image/webp,image/jpeg,image/gif", "aria-label": "Fichiers à importer" }) as HTMLInputElement;
+  const files = h("input", { type: "file", multiple: true, accept: ".svg,image/svg+xml,image/png,image/webp,image/jpeg,image/gif,.glb,.gltf,model/gltf-binary,model/gltf+json", "aria-label": "Fichiers à importer" }) as HTMLInputElement;
   const upCat = h("select", { "aria-label": "Classement des fichiers importés" }, Object.entries(ctx.tax!.media_categories).map(([k, l]) => h("option", { value: k, selected: k === "sprite" }, l))) as HTMLSelectElement;
   const upTags = h("input", { placeholder: "étiquettes, séparées par des virgules", "aria-label": "Étiquettes des fichiers importés" }) as HTMLInputElement;
   const progress = h("p", { class: "muted", "aria-live": "polite" });
 
   fill(root, 
     h("header", { class: "page-head" }, h("div", {}, h("h1", {}, "Bibliothèque de médias"),
-      h("p", { class: "lede" }, `Fichiers utilisés par les assets. Formats : SVG (assaini), PNG, WebP, JPEG, GIF · ${ctx.tax!.limits.upload_mb} Mo et ${ctx.tax!.limits.image_px} px maximum. Les modèles 3D (glTF/GLB) ne sont pas acceptés : aucun rendu 3D n'existe dans l'atelier.`))),
+      h("p", { class: "lede" }, `Fichiers utilisés par les assets. Formats : SVG (assaini), PNG, WebP, JPEG, GIF · ${ctx.tax!.limits.upload_mb} Mo et ${ctx.tax!.limits.image_px} px maximum. Modèles 3D : GLB, ou glTF autonome (tampons et textures intégrés), ${ctx.tax!.limits.model_mb ?? 20} Mo maximum, sans compression Draco ni Meshopt ; ils servent de paysages aux cartes du jeu (« Villes et cartes »).`))),
     can("media.upload") ? h("div", { class: "panel" }, h("h2", {}, "Importer des fichiers"), row(field("Fichiers", files), field("Classement", upCat), field("Étiquettes", upTags)), progress) : null,
     h("div", { class: "filters" }, q, kind, cat, h("label", { class: "toggle" }, arch, "Archivés")),
     h("div", { class: "media-layout" }, grid, detail));
@@ -47,13 +47,17 @@ export async function mediaView(root: HTMLElement) {
     const name = h("input", { value: m.name, disabled: !mine }) as HTMLInputElement;
     const tags = h("input", { value: m.tags.join(", "), disabled: !mine }) as HTMLInputElement;
     const c = h("select", { disabled: !mine }, Object.entries(ctx.tax!.media_categories).map(([k, l]) => h("option", { value: k, selected: k === m.category }, l))) as HTMLSelectElement;
-    const repl = h("input", { type: "file", disabled: !mine || !can("media.upload"), accept: m.kind === "svg" ? ".svg,image/svg+xml" : "image/png,image/webp,image/jpeg,image/gif", "aria-label": "Fichier de remplacement" }) as HTMLInputElement;
+    const repl = h("input", { type: "file", disabled: !mine || !can("media.upload"), accept: m.kind === "svg" ? ".svg,image/svg+xml" : m.kind === "model" ? ".glb,.gltf" : "image/png,image/webp,image/jpeg,image/gif", "aria-label": "Fichier de remplacement" }) as HTMLInputElement;
     repl.addEventListener("change", async () => {
       const f = repl.files?.[0]; if (!f) return;
       try { await api.replaceMedia(m.id, f, f.name); toast("Fichier remplacé : même identifiant, nouvelle révision"); await refreshMedia(); show(m.id); load(); } catch (e) { toast((e as Error).message, "err"); }
     });
     fill(detail, h("div", { class: "panel" },
-      h("div", { class: `svg-prev ${m.kind === "svg" ? "checker" : ""}` }, h("img", { src: m.url, alt: m.name })),
+      m.kind === "model"
+        ? h("div", { class: "model-facts" }, h("p", {}, `Modèle 3D ${m.meta.format?.toUpperCase()} · ${m.meta.size?.join(" × ")} unités (largeur × hauteur × profondeur) · ${m.meta.triangles} triangles · ${m.meta.materials} matériau(x) · ${m.meta.textures} texture(s)`),
+            h("p", { class: "small" }, `Objets nommés : ${(m.meta.objects ?? []).map((o) => o.unique ? o.name : `${o.name} (en double)`).join(", ") || "aucun"}`),
+            (m.meta.warnings ?? []).map((w) => h("p", { class: "small txt-danger" }, w)))
+        : h("div", { class: `svg-prev ${m.kind === "svg" ? "checker" : ""}` }, h("img", { src: m.url, alt: m.name })),
       h("h2", {}, m.name),
       h("p", { class: "meta" }, `${m.filename} · ${m.mime} · ${fmtSize(m.size)} · ${Math.round(m.width)} × ${Math.round(m.height)} · révision ${m.revision}`),
       h("p", { class: "meta" }, `Importé par ${m.created_by}, ${fmtDate(m.created_at)}`, h("br"), h("code", { title: "Identifiant stable" }, m.id)),
@@ -68,6 +72,11 @@ export async function mediaView(root: HTMLElement) {
       h("h3", {}, `Utilisé par (${m.usage.length})`),
       m.usage.length ? h("ul", { class: "list" }, m.usage.map((u) => h("li", {}, h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); openAsset(u.asset_id, u.family); } }, u.name),
         ` v${u.version} (${u.status})`, u.pinned_revision ? ` · figé sur la révision ${u.pinned_revision}` : ""))) : h("p", { class: "muted small" }, "Aucun asset n'utilise ce fichier."),
+      m.kind === "model" ? h("h3", {}, `Cartes du jeu (${(m as any).map_usage?.length ?? 0})`) : null,
+      m.kind === "model" ? ((m as any).map_usage?.length
+        ? h("ul", { class: "list", id: "media-map-usage" }, (m as any).map_usage.map((u: any) => h("li", {}, h("a", { href: `#/monde/carte/${u.map_id}` }, u.name),
+          ` (${u.status}) · ${u.uses.map((x: any) => `${x.where} : révision ${x.revision ?? "courante"}`).join(" ; ")}`)))
+        : h("p", { class: "muted small" }, "Aucune carte n'utilise ce modèle.")) : null,
       h("h3", {}, "Révisions"),
       h("ul", { class: "list" }, m.revisions.map((r) => h("li", {}, h("a", { href: r.url, target: "_blank", rel: "noopener" }, `Révision ${r.revision}`), ` · ${r.filename} · ${fmtSize(r.size)} · ${fmtDate(r.created_at)}`))),
       mine ? h("button", { class: "btn btn-small btn-quiet", onclick: async () => {

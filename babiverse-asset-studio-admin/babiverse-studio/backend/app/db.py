@@ -218,7 +218,59 @@ def _m3(conn) -> None:
     conn.executescript("CREATE TABLE IF NOT EXISTS media_blobs (sha256 TEXT PRIMARY KEY, data BLOB NOT NULL)")
 
 
-MIGRATIONS = [_m1, _m2, _m3]
+def _m4(conn) -> None:
+    """Monde multi-villes (phase 2) : villes, zones (communes, quartiers), cartes jouables et leurs versions publiées.
+
+    Une carte a un brouillon (`draft`, JSON) modifiable sans effet sur le jeu, et des versions publiées immuables
+    (`map_versions`) ; `published_version` désigne celle que reçoit le jeu. Les cartes intégrées au jeu (catalogue
+    shared/maps.json : quartier, maison, epicerie) ne sont pas copiées ici. Migration additive : rien n'est modifié."""
+    conn.executescript("""
+CREATE TABLE IF NOT EXISTS cities (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'published',
+  created_by TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS districts (
+  id TEXT PRIMARY KEY,
+  city_id TEXT NOT NULL REFERENCES cities(id),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'published',
+  created_by TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS game_maps (
+  id TEXT PRIMARY KEY,
+  district_id TEXT NOT NULL REFERENCES districts(id),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft',
+  draft TEXT NOT NULL,
+  published_version INTEGER,
+  created_by TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS map_versions (
+  map_id TEXT NOT NULL REFERENCES game_maps(id),
+  version INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  published_by TEXT NOT NULL,
+  published_at REAL NOT NULL,
+  PRIMARY KEY (map_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_districts_city ON districts(city_id);
+CREATE INDEX IF NOT EXISTS idx_maps_district ON game_maps(district_id);
+""")
+
+
+MIGRATIONS = [_m1, _m2, _m3, _m4]
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

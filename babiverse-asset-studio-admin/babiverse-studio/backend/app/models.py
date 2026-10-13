@@ -537,3 +537,115 @@ class ExportIn(Strict):
 class ImportApplyIn(Strict):
     decisions: dict[str, Literal["create", "skip", "copy", "new_version"]] = Field(default_factory=dict)
     import_scenes: bool = True
+
+
+# ---------------------------------------------------------------- monde : villes, zones, cartes (worldmaps.py)
+# Identifiants stables, en minuscules : ceux des cartes deviennent les zones du jeu (Character.zone, 32 caractères).
+WORLD_ID = r"^[a-z][a-z0-9_]{0,47}$"
+MAP_ID = r"^[a-z][a-z0-9_]{0,31}$"
+ITEM_ID = r"^[a-z0-9][a-z0-9_]{0,31}$"
+
+
+class CityIn(Strict):
+    id: str = Field(pattern=WORLD_ID)
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field("", max_length=500)
+
+
+class DistrictIn(Strict):
+    id: str = Field(pattern=WORLD_ID)
+    city_id: str = Field(pattern=WORLD_ID)
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field("", max_length=500)
+
+
+class MapArea(Strict):
+    """Rectangle de cases (coin nord-ouest, largeur, profondeur)."""
+    x: int = Field(ge=0, le=200)
+    y: int = Field(ge=0, le=200)
+    w: int = Field(ge=1, le=60)
+    h: int = Field(ge=1, le=60)
+
+
+class LandscapeIn(Strict):
+    """Instance d'un paysage 3D (média de la médiathèque) placée sur une carte. Ses réglages ne touchent pas le fichier."""
+    id: str = Field(pattern=ITEM_ID)
+    media_id: str = Field(min_length=1, max_length=64)
+    revision: Optional[int] = Field(None, ge=1)   # absent : révision courante du fichier, figée à l'enregistrement
+    x: float = Field(ge=0, le=200)                # origine du modèle, en cases
+    z: float = Field(ge=0, le=200)
+    rotation: Literal[0, 90, 180, 270] = 0        # degrés, sens horaire vu du dessus (nord en haut)
+    scale: float = Field(1.0, gt=0, le=20)        # 1 unité du modèle = 1 case à l'échelle 1
+    solid: bool = True                            # emprise au sol infranchissable
+
+
+class MapTarget(Strict):
+    zone: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    spawn: str = Field("default", pattern=r"^[a-z][a-z0-9_]{0,47}$")
+
+
+class ConditionIn(Strict):
+    """Condition de passage d'une porte, vérifiée par le serveur du jeu (jamais par la seule configuration)."""
+    type: Literal["mission_completed", "min_balance"]
+    mission: Optional[str] = Field(None, pattern=r"^m_[a-z0-9_]{1,40}$")
+    amount: Optional[int] = Field(None, ge=0, le=10_000_000)
+
+
+class ArrivalIn(Strict):
+    """Point d'arrivée nommé sur une carte (destination d'une porte venant d'ailleurs)."""
+    id: str = Field(pattern=ITEM_ID)
+    x: int = Field(ge=0, le=200)
+    y: int = Field(ge=0, le=200)
+
+
+class InteractiveIn(Strict):
+    """Objet interactif : zone tracée à la main, ou déduite d'un objet nommé du modèle (`landscape` + `node`)."""
+    id: str = Field(pattern=ITEM_ID)
+    name: str = Field(min_length=1, max_length=60)
+    type: Literal["shop", "info", "door"]
+    active: bool = True
+    area: Optional[MapArea] = None
+    landscape: Optional[str] = Field(None, pattern=ITEM_ID)
+    node: Optional[str] = Field(None, min_length=1, max_length=80)
+    label: str = Field("", max_length=60)
+    text: str = Field("", max_length=400)
+    target: Optional[MapTarget] = None
+    conditions: list[ConditionIn] = Field(default_factory=list, max_length=4)
+    mode: Literal["walk", "transport"] = "walk"   # « transport » : gbaka, taxi… (déplacements entre communes, villes)
+
+
+class MapEntranceIn(Strict):
+    """Accès depuis la Cité Akwaba : panneau posé sur une case de la ville (vérifiée par le jeu à l'affichage)."""
+    zone: Literal["quartier"] = "quartier"
+    x: int = Field(ge=1, le=400)
+    y: int = Field(ge=1, le=400)
+    label: str = Field(min_length=1, max_length=24)
+
+
+class MapDraftIn(Strict):
+    width: int = Field(ge=8, le=120)
+    height: int = Field(ge=8, le=120)
+    ground: Literal["grass", "dirt", "paving", "sand"] = "grass"
+    spawn: list[int] = Field(min_length=2, max_length=2)
+    landscapes: list[LandscapeIn] = Field(default_factory=list, max_length=50)
+    interactives: list[InteractiveIn] = Field(default_factory=list, max_length=100)
+    arrivals: list[ArrivalIn] = Field(default_factory=list, max_length=20)
+    entrance: Optional[MapEntranceIn] = None
+
+
+class MapIn(Strict):
+    id: str = Field(pattern=MAP_ID)
+    district_id: str = Field(pattern=WORLD_ID)
+    name: str = Field(min_length=1, max_length=60)
+    description: str = Field("", max_length=500)
+    width: int = Field(24, ge=8, le=120)
+    height: int = Field(18, ge=8, le=120)
+    ground: Literal["grass", "dirt", "paving", "sand"] = "grass"
+
+
+class MapRestoreIn(Strict):
+    version: int = Field(ge=1)
+
+
+class MapPublishIn(Strict):
+    note: str = Field("", max_length=200)

@@ -1,0 +1,9 @@
+Personnages 3D — Animated Characters de Kenney (www.kenney.nl), licence Creative Commons Zero (CC0 1.0)
+https://kenney.nl/assets/animated-characters-protagonists — http://creativecommons.org/publicdomain/zero/1.0/
+Utilisation libre, y compris commerciale ; mention de l'auteur appréciée mais non obligatoire.
+
+humain.glb : Model/characterMedium.fbx et Animations/idle.fbx, run.fbx, jump.fbx (prises « Root|Idle »,
+« Root|Run », « Root|Jump »), convertis en glTF par FBXLoader + GLTFExporter de Three.js 0.179, couleurs de
+sommets retirées, puis allégés par glTF-Transform 4.1 (pistes d'échelle et contrôleurs IK retirés, rééchantillonnage,
+positions / normales / poids quantifiés KHR_mesh_quantization). Pas de texture : le jeu peint les vêtements
+d'après la tenue de l'atelier (voir client/src/engine3d/charPlan.js, LAYOUT).

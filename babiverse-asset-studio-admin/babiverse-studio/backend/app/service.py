@@ -764,7 +764,7 @@ def upload_media(conn, user, data: bytes, filename: str, name: str | None = None
     if category not in md.MEDIA_CATEGORIES:
         raise ServiceError(422, f"Classement inconnu : {category}")
     try:
-        info = md.inspect(data, filename, s.max_upload_bytes, s.max_image_px)
+        info = md.inspect(data, filename, s.max_upload_bytes, s.max_image_px, s.max_model_bytes)
     except md.MediaError as exc:
         raise ServiceError(422, str(exc)) from exc
     sha = store_file(conn, info["data"], info["ext"])
@@ -793,11 +793,11 @@ def replace_media(conn, user, media_id: str, data: bytes, filename: str) -> dict
     _can_manage_media(user, m)
     s = CONTEXT["settings"]
     try:
-        info = md.inspect(data, filename, s.max_upload_bytes, s.max_image_px)
+        info = md.inspect(data, filename, s.max_upload_bytes, s.max_image_px, s.max_model_bytes)
     except md.MediaError as exc:
         raise ServiceError(422, str(exc)) from exc
     if info["kind"] != m["kind"]:
-        raise ServiceError(422, "Le fichier de remplacement doit être du même type (SVG ou image matricielle).")
+        raise ServiceError(422, "Le fichier de remplacement doit être du même type (SVG, image matricielle ou modèle 3D).")
     sha = store_file(conn, info["data"], info["ext"])
     rev = m["revision"] + 1
     now = _now()

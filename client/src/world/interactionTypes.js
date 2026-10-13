@@ -3,6 +3,7 @@
 // { id, label, enabled, reason, run, remote }. Liste vide = élément invisible pour l'instant.
 // remote : l'action est possible à distance (consulter, acheter) ; sinon il faut être à portée.
 import { resolveSlot } from './ads.js';
+import { conditionReason } from './conditions.js';
 import { PLOTS } from './city.js';
 import { NPCS } from './npcs.js';
 import { plotView } from './plots.js';
@@ -10,9 +11,13 @@ import { plotView } from './plots.js';
 const fmt = (n) => `${Math.round(n).toLocaleString('fr-FR')} F`;
 
 export const INTERACTION_TYPES = {
-  door: (it, { actions }) => [
-    { id: 'enter', label: it.label, run: () => actions.enterDoor(it.target) },
-  ],
+  // Porte : passage vers une autre zone. Avec des conditions (cartes de l'atelier), l'action reste visible mais
+  // désactivée tant qu'elles ne sont pas remplies ; le serveur revérifie à l'arrivée.
+  door: (it, { actions, store }) => {
+    const action = { id: 'enter', label: it.label, run: () => actions.enterDoor(it.target) };
+    const reason = it.conditions?.length ? conditionReason(it.conditions, store) : null;
+    return reason ? [{ ...action, enabled: false, reason }] : [action];
+  },
 
   // Élément d'information : l'action ouvre sa fiche (texte, actions éventuelles).
   info: (it, { actions }) => [

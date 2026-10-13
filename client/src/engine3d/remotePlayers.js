@@ -37,7 +37,7 @@ export class RemotePlayers {
   add(p, key) {
     const model = buildCharacter({ ...p.appearance, pants: '#2c3e50' });
     const label = textSprite(`${p.friend ? '★ ' : ''}${p.name}`, { size: 24, bg: p.friend ? '#2e7d4f' : '#1f4e79' });
-    label.position.y = 1.45;
+    label.position.y = 1.85;
     model.add(label);
     this.world.zoneGroup.add(model);
     const r = { id: p.id, key, model, label, body: { x: p.x, y: p.y }, target: { x: p.x, y: p.y }, speed: 0, info: p };

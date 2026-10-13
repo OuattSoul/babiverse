@@ -20,7 +20,7 @@ import hashlib
 import json
 import time
 
-from . import gameworld
+from . import gameworld, worldmaps
 from .db import audit, get_setting, set_setting, tx
 from .runtime import _character_appearance, pinned_part
 from .service import ServiceError, approve, catalog, get_asset_row, get_version_row, publish, submit
@@ -326,6 +326,8 @@ def game_pack(conn) -> dict:
     body = {"wardrobe": wardrobe, "inhabitants": inhabitants, "home": _home(conn, settings["home_interior"]),
             "npcs": [{**n, "inhabitant": assigned[n["id"]]} for n in GAME_NPCS],
             "placements": placements, "kits": kits, "removals": gameworld.pack_removals(conn),
+            # cartes publiées par l'atelier (version publiée seulement ; les brouillons ne partent jamais)
+            "maps": worldmaps.pack_maps(conn),
             "parts": {k: v for k, v in parts.items() if v}}
     revision = hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
     return {"format": FORMAT, "format_version": FORMAT_VERSION, "generated_at": time.time(), "revision": revision,

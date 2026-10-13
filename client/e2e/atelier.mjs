@@ -76,7 +76,7 @@ export async function run() {
     check('Apparence de l’atelier enregistrée par le serveur', !!look.studio?.layers?.top && !!look.studio?.layers?.bottom, JSON.stringify(Object.keys(look.studio?.layers || {})));
 
     // 2. Maison : intérieur choisi dans l'atelier
-    const zone = await page.evaluate(() => ({ id: window.__babi.world.zoneId, name: window.__babi.world.zone.name, sprite: !!window.__babi.world.player.model.userData.puppet }));
+    const zone = await page.evaluate(() => ({ id: window.__babi.world.zoneId, name: window.__babi.world.zone.name, sprite: !!(window.__babi.world.player.model.userData.kit || window.__babi.world.player.model.userData.puppet) }));
     check('Le joueur apparaît chez lui', zone.id === 'maison', zone.id);
     check('Personnage du joueur dessiné avec ses composants', zone.sprite);
     if (pack.home) check('Maison : intérieur de l’atelier', zone.name === pack.home.name, zone.name);
@@ -84,45 +84,46 @@ export async function run() {
     await s.shot('02-maison');
     const energy = (await s.state()).character.energy;
     await page.evaluate(() => { const p = window.__babi.stand('lit'); window.__babi.goTo(p.x, p.y); });
-    // Marche articulée : pendant le trajet, jambes et bras pivotent en opposition.
+    // Marche : personnage animé → animation « walk » ; personnage en volume → jambes et bras en opposition.
     const swing = await page.evaluate(async () => {
-      const { joints } = window.__babi.world.player.model.userData.puppet;
+      const model = window.__babi.world.player.model;
+      if (model.userData.kit) {
+        let walk = false;
+        for (let i = 0; i < 30 && !walk; i++) { await new Promise((r) => setTimeout(r, 50)); walk = ['walk', 'sprint'].includes(model.userData.kit.current); }
+        return { animated: true, walk };
+      }
+      const { joints } = model.userData.puppet;
       let legs = 0; let opposed = false;
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 50));
-        legs = Math.max(legs, Math.abs(joints.legL.rotation.z));
-        if (joints.legL.rotation.z * joints.legR.rotation.z < 0 && joints.legL.rotation.z * joints.armL.rotation.z < 0) opposed = true;
+        legs = Math.max(legs, Math.abs(joints.legL.rotation.x));
+        if (joints.legL.rotation.x * joints.legR.rotation.x < 0 && joints.legL.rotation.x * joints.armL.rotation.x < 0) opposed = true;
       }
       return { legs, opposed };
     });
-    check('Marche : jambes et bras se balancent en opposition', swing.legs > 0.1 && swing.opposed, JSON.stringify(swing));
+    check('Marche : animation de marche (ou jambes et bras en opposition)', swing.animated ? swing.walk : swing.legs > 0.1 && swing.opposed, JSON.stringify(swing));
     await page.waitForFunction(() => window.__babi.prompt() === 'Faire une sieste', null, { timeout: 20000 }).catch(() => {});
     check('Maison : le lit de l’atelier propose la sieste', (await s.prompt()) === 'Faire une sieste', await s.prompt());
     await s.interact();
     await page.waitForFunction((e) => window.__babi.store.state.character.energy > e, energy, { timeout: 8000 }).catch(() => {});
     check('Maison : la sieste fonctionne', (await s.state()).character.energy > energy);
-    // Vues : de face, de profil et de dos selon le cap du personnage par rapport à la caméra.
-    const views = await page.evaluate(async () => {
-      const w = window.__babi.world;
-      const m = w.player.model;
-      const seen = [];
-      for (const k of [0, 1, 2, 3]) {
-        await new Promise((r) => setTimeout(r, 300));
-        const yaw = Math.atan2(w.rig.camera.position.x - m.position.x, w.rig.camera.position.z - m.position.z);
-        const want = ['front', 'side', 'back', 'side'][k];
-        const p = m.userData.puppet;
-        // la vue de dos ou de profil est rastérisée à la première demande : on attend qu'elle s'affiche
-        for (let t = 0; t < 40 && p.view !== want; t++) {
-          m.rotation.y = yaw + (k * Math.PI) / 2;
-          await new Promise((r) => setTimeout(r, 50));
-        }
-        m.rotation.y = yaw + (k * Math.PI) / 2;
-        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-        seen.push(p.view + (p.mirror ? '<' : ''));
+    // Volume : modèle 3D animé (maillages avec squelette), ou volumes d'une vraie épaisseur.
+    await page.waitForFunction(() => { const m = window.__babi.world.player.model; return m.userData.kit || m.userData.puppet.ready; }, null, { timeout: 10000 }).catch(() => {});
+    const volume = await page.evaluate(() => {
+      const model = window.__babi.world.player.model;
+      if (model.userData.kit) {
+        let skinned = 0;
+        model.traverse((o) => { if (o.isSkinnedMesh) skinned++; });
+        return { animated: true, skinned };
       }
-      return seen;
+      const { joints, ready } = model.userData.puppet;
+      const mesh = joints.torso.children[0];
+      if (!ready || !mesh) return { ready, pieces: 0 };
+      mesh.geometry.computeBoundingBox();
+      const { min, max } = mesh.geometry.boundingBox;
+      return { ready, pieces: Object.values(joints).filter((j) => j.children.length).length, width: max.x - min.x, depth: max.z - min.z };
     });
-    check('Personnage vu de face, de profil et de dos quand il tourne', views.join(',') === 'front,side,back,side<', views.join(','));
+    check('Personnage en 3D (modèle animé, ou tronc, bras et jambes épais)', volume.animated ? volume.skinned >= 1 : volume.ready && volume.pieces >= 3 && volume.depth > 0.08 && volume.depth > volume.width * 0.3, JSON.stringify(volume));
 
     // 3. Ville : PNJ et habitants de l'atelier
     await page.evaluate(() => { const p = window.__babi.stand('sortie_maison'); window.__babi.goTo(p.x, p.y); });
@@ -132,8 +133,8 @@ export async function run() {
     await wait(1500);
     const city = await page.evaluate(() => {
       const w = window.__babi.world;
-      const npcs = w.npcs.map((n) => ({ id: n.id, sprite: !!n.model.userData.puppet, behavior: n.behavior.type }));
-      const peds = w.ambient?.pedestrians.filter((p) => p.npc.model.userData.puppet).length ?? 0;
+      const npcs = w.npcs.map((n) => ({ id: n.id, sprite: !!(n.model.userData.kit || n.model.userData.dressing || n.model.userData.puppet), behavior: n.behavior.type }));
+      const peds = w.ambient?.pedestrians.filter((p) => p.npc.model.userData.kit || p.npc.model.userData.dressing || p.npc.model.userData.puppet).length ?? 0;
       return { npcs, peds };
     });
     const replaced = pack.inhabitants.filter((x) => x.npc && city.npcs.some((n) => n.id === x.npc));
@@ -175,7 +176,7 @@ export async function run() {
     const after = (await s.state()).character.appearance;
     check('Profil : nouvelle apparence enregistrée', JSON.stringify(after) !== before && !!after.studio);
     check('Profil : le personnage change aussitôt dans le monde',
-      await page.evaluate(() => window.__babi.world.player.model !== window.__oldModel && !!window.__babi.world.player.model.userData.puppet));
+      await page.evaluate(() => window.__babi.world.player.model !== window.__oldModel && !!(window.__babi.world.player.model.userData.kit || window.__babi.world.player.model.userData.puppet)));
     await wait(800);
     await s.shot('04-nouvelle-apparence');
   } catch (err) {

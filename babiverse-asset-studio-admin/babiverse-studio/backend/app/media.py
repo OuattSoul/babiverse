@@ -21,12 +21,13 @@ import re
 import struct
 import time
 
-from . import svgsafe
+from . import gltf, svgsafe
 
 RASTER = {"image/png": "png", "image/webp": "webp", "image/jpeg": "jpg", "image/gif": "gif"}
-EXT_MIME = {"svg": "image/svg+xml", **{v: k for k, v in RASTER.items()}}
+MODELS = {"model/gltf-binary": "glb", "model/gltf+json": "gltf"}
+EXT_MIME = {"svg": "image/svg+xml", **{v: k for k, v in RASTER.items()}, **{v: k for k, v in MODELS.items()}}
 MEDIA_CATEGORIES = {"character_part": "Composant de personnage", "component": "Composant modulaire", "sprite": "Sprite d'objet", "texture": "Texture de surface",
-                    "cover": "Image de couverture", "pattern": "Motif", "other": "Autre"}
+                    "cover": "Image de couverture", "pattern": "Motif", "landscape": "Paysage 3D (GLB / glTF)", "other": "Autre"}
 SAFE_NAME = re.compile(r"[^A-Za-z0-9_.\-]+")
 
 
@@ -91,17 +92,27 @@ def raster_size(data: bytes, mime: str) -> tuple[int, int] | None:
     return None
 
 
-def inspect(data: bytes, filename: str, max_bytes: int, max_px: int) -> dict:
-    """Contrôle complet d'un fichier. Retourne {mime, ext, kind, width, height, meta, data} (data = contenu à stocker)."""
+def inspect(data: bytes, filename: str, max_bytes: int, max_px: int, max_model_bytes: int | None = None) -> dict:
+    """Contrôle complet d'un fichier. Retourne {mime, ext, kind, width, height, meta, data} (data = contenu à stocker).
+
+    Modèles 3D (GLB, glTF autonome) : `kind` = « model », plafond `max_model_bytes` (sinon `max_bytes`), largeur et
+    hauteur = emprise au sol du modèle (x, z) en unités du modèle ; détails dans `meta` (voir gltf.inspect)."""
     if not data:
         raise MediaError("Fichier vide.")
-    if len(data) > max_bytes:
-        raise MediaError(f"Fichier trop volumineux : {len(data) / 1048576:.1f} Mo (maximum {max_bytes // 1048576} Mo).")
     mime = sniff(data)
+    limit = (max_model_bytes or max_bytes) if mime == "model/gltf" else max_bytes
+    if len(data) > limit:
+        raise MediaError(f"Fichier trop volumineux : {len(data) / 1048576:.1f} Mo (maximum {limit // 1048576} Mo).")
     if mime == "model/gltf":
-        raise MediaError("Les modèles 3D (glTF/GLB) ne sont pas acceptés : l'atelier n'a pas de rendu 3D.")
+        try:
+            info = gltf.inspect(data)
+        except gltf.GltfError as exc:
+            raise MediaError(str(exc)) from exc
+        size = info["meta"]["size"]
+        return {"mime": info["mime"], "ext": info["ext"], "kind": "model", "width": size[0], "height": size[2],
+                "meta": info["meta"], "data": data}
     if mime is None:
-        raise MediaError("Format non reconnu. Formats acceptés : SVG, PNG, WebP, JPEG, GIF.")
+        raise MediaError("Format non reconnu. Formats acceptés : SVG, PNG, WebP, JPEG, GIF, modèles 3D GLB / glTF.")
     if mime == "image/svg+xml":
         try:
             res = svgsafe.sanitize(data)
@@ -143,7 +154,7 @@ def store(media_dir: str, data: bytes, ext: str) -> tuple[str, str]:
 
 
 def path_for(media_dir: str, sha: str, mime: str) -> str:
-    ext = "svg" if mime == "image/svg+xml" else RASTER.get(mime, "bin")
+    ext = "svg" if mime == "image/svg+xml" else RASTER.get(mime) or MODELS.get(mime, "bin")
     return os.path.join(media_dir, sha[:2], f"{sha}.{ext}")
 
 

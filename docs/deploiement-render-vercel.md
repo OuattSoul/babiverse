@@ -69,3 +69,10 @@ Depuis la base PostgreSQL locale : `pg_dump --no-owner --no-acl <URL locale> | p
 - **E-mails** : vérifier un domaine dans Resend et mettre `DEFAULT_FROM_EMAIL` sur ce domaine (`onboarding@resend.dev` ne livre qu'au propriétaire du compte Resend).
 - **Tâche quotidienne** `python manage.py purge_comptes` : pas de cron gratuit sur Render ; à lancer à la main dans le Shell, ou via un *Cron Job* payant.
 - **Sauvegardes** : `pg_dump -Fc "<URL externe>/babi_verse_db?sslmode=require" -f jeu.dump` (et `babiverse_studio`).
+
+## 5. Cartes de l'atelier et paysages 3D (ADR 0012)
+
+- **Migrations** : l'atelier passe en schéma 4 au démarrage (tables `cities`, `districts`, `game_maps`, `map_versions`, ajout seul) ; le jeu n'a aucune migration Django pour ces cartes. Sauvegarder les deux bases avant le déploiement (`pg_dump`, section 4).
+- **Variable** : `BABIVERSE_MAX_MODEL_MB` (atelier, 20 par défaut) plafonne un modèle GLB / glTF. Sur Render gratuit (`BABIVERSE_MEDIA_STORAGE=database`), les modèles sont stockés en base : garder des fichiers légers, en attendant un stockage objet.
+- **Fichiers 3D côté jeu** : le backend du jeu les lit sur l'atelier (`ATELIER_URL`, `ATELIER_KEY`) et les relaie au navigateur sous `/api/atelier/models/…` (cache immuable). Sans atelier joignable en production, lancer `python manage.py sync_atelier` : il copie le pack **et** les modèles des cartes publiées (contrôle d'empreinte), à côté de `ATELIER_PACK_FILE`.
+- **Retour arrière** : redéployer le commit précédent. Les tables ajoutées sont ignorées par l'ancien code ; pour retirer une carte du jeu sans redéployer, la désactiver dans l'atelier (« Villes et cartes ») : les positions des joueurs sont conservées.

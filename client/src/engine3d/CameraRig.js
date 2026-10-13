@@ -8,7 +8,7 @@
 // la politique de la zone (voir world/selectables.js). Seuils clic / glissement : world/pointer.js.
 import * as THREE from 'three';
 import { exceedsSlop, isTap, wheelIntent } from '../world/pointer.js';
-import { angleDelta, clamp, clampToBounds, LIMITS, mapBounds, orbitPosition, panDelta, zoomProgress } from './cameraMath.js';
+import { angleDelta, clamp, clampToBounds, LIMITS, mapBounds, orbitPosition, panDelta, TARGET_Y, zoomProgress } from './cameraMath.js';
 
 export class CameraRig {
   constructor(canvas, { onTap, onFreeChange }) {
@@ -47,7 +47,7 @@ export class CameraRig {
   }
 
   snapTo(x, z) {
-    this.goal.target.set(x, 0.5, z);
+    this.goal.target.set(x, TARGET_Y, z);
     this.cur.target.copy(this.goal.target);
   }
 
@@ -63,7 +63,7 @@ export class CameraRig {
 
   /** Vue libre centrée sur un point du sol (x, z), à la distance demandée. */
   lookAt(x, z, dist) {
-    this.goal.target.set(x, 0.5, z);
+    this.goal.target.set(x, TARGET_Y, z);
     clampToBounds(this.goal.target, this.bounds);
     if (dist !== undefined) this.goal.dist = clamp(dist, this.range.min, this.range.max);
     this.setFree(true);
@@ -77,7 +77,8 @@ export class CameraRig {
   pitchFor(dist) {
     // Courbe absolue (pas relative à la zone) : même inclinaison à distance égale, vue de dessus au-delà.
     const t = zoomProgress(dist, { min: LIMITS.distMin, max: LIMITS.distMax });
-    return clamp(0.72 + t * 0.6 + this.goal.tilt, LIMITS.pitchMin, LIMITS.pitchMax);
+    // Basse de près (on voit les personnages de trois quarts), vue de dessus en s'éloignant.
+    return clamp(0.42 + t * 0.95 + this.goal.tilt, LIMITS.pitchMin, LIMITS.pitchMax);
   }
 
   // --- Gestes ----------------------------------------------------------------------
@@ -158,7 +159,7 @@ export class CameraRig {
 
   // --- Mise à jour par image -----------------------------------------------------------
   update(dt, follow) {
-    if (follow && !this.free) clampToBounds(this.goal.target.set(follow.x, 0.5, follow.z), this.bounds);
+    if (follow && !this.free) clampToBounds(this.goal.target.set(follow.x, TARGET_Y, follow.z), this.bounds);
     const k = 1 - Math.exp(-dt * 7);
     const c = this.cur;
     c.target.lerp(this.goal.target, k);

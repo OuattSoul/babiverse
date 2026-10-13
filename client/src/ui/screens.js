@@ -3,6 +3,7 @@
 import { api, auth } from '../net/api.js';
 import { store } from '../state/store.js';
 import { createPreview } from '../engine3d/preview.js';
+import { quality } from '../engine3d/quality.js';
 import { composeCharacter, svgDataUrl } from '../atelier/compose.js';
 import { atelier, studioLook, svgCharacter, wardrobeReady } from '../atelier/pack.js';
 import { bodiesOf, colorsOf, createChoice, fits, gendersOf, GENDER_LABELS, WARDROBE_SECTIONS } from '../atelier/wardrobe.js';
@@ -642,9 +643,13 @@ export function settingsPanel() {
   const privacy = el('div', {});
   privacy.append(el('button', { class: 'ghost', onclick: () => privacy.replaceChildren(...privacyContent()) }, 'Ce que nous enregistrons'));
   fetchLedger(ledger);
+  const saver = el('input', { type: 'checkbox', id: 'saver', checked: quality.saver, onchange: () => quality.setSaver(saver.checked) });
   ui.open('Réglages', '', () => {
     return [
       ...account,
+      el('h3', {}, 'Affichage'),
+      el('label', { for: 'saver' }, saver, ' Économie de batterie'),
+      el('p', { class: 'muted' }, 'Image moins fine, sans ombres, 30 images par seconde : pour les petits téléphones ou une batterie faible.'),
       el('h3', {}, 'Mes derniers mouvements'),
       ledger,
       el('h3', {}, 'Signaler un bug'),

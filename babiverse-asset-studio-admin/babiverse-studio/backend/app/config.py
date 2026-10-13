@@ -10,6 +10,7 @@
 | BABIVERSE_SECRET | clé de signature des liens de fichiers | générée et conservée en base |
 | BABIVERSE_ADMIN_USER / BABIVERSE_ADMIN_PASSWORD | compte administrateur initial (obligatoire en production) | — |
 | BABIVERSE_MAX_UPLOAD_MB | taille maximale d'un fichier importé | 5 |
+| BABIVERSE_MAX_MODEL_MB | taille maximale d'un modèle 3D (GLB / glTF) | 20 |
 | BABIVERSE_MAX_IMPORT_MB | taille maximale d'un lot importé (zip) | 50 |
 | BABIVERSE_MAX_IMAGE_PX | côté maximal d'une image matricielle | 4096 |
 | BABIVERSE_SESSION_HOURS | durée maximale d'une session | 12 |
@@ -60,6 +61,7 @@ class Settings:
     session_idle_min: int
     pbkdf2_iterations: int
     game_key: str | None = None
+    max_model_bytes: int = 20 * 1024 * 1024
     media_storage: str = "disk"
 
     @property
@@ -107,6 +109,7 @@ def load(db_path: str | None = None) -> Settings:
         pbkdf2_iterations=_int("BABIVERSE_PBKDF2_ITERATIONS", 200_000),
         game_key=os.environ.get("BABIVERSE_GAME_KEY") or (None if env == "production" else "babiverse-dev"),
         media_storage=os.environ.get("BABIVERSE_MEDIA_STORAGE", "disk").strip().lower(),
+        max_model_bytes=_int("BABIVERSE_MAX_MODEL_MB", 20) * 1024 * 1024,
     )
     if s.media_storage not in ("disk", "database"):
         raise RuntimeError("BABIVERSE_MEDIA_STORAGE doit valoir « disk » ou « database ».")

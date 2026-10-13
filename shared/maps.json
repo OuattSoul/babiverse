@@ -1,0 +1,32 @@
+{
+  "_doc": "Catalogue des cartes jouables, lu par le serveur (zones reconnues, positions acceptées) et par le client (construction des zones). Une carte = une zone du jeu ; son identifiant est celui enregistré dans Character.zone et ne doit jamais être renommé. Seules les cartes « published » sont chargées ; une carte « disabled » n'est plus proposée mais les données des joueurs qui s'y trouvaient sont conservées. Les cartes historiques sont de type « generator » : leur contenu est produit par le code du client (client/src/world/maps.js), aux coordonnées d'origine.",
+  "format": "babiverse-maps",
+  "format_version": 1,
+  "cities": [
+    { "id": "abidjan", "name": "Abidjan", "status": "published" }
+  ],
+  "districts": [
+    { "id": "cite_akwaba", "city": "abidjan", "name": "Cité Akwaba", "status": "published" }
+  ],
+  "maps": [
+    {
+      "id": "quartier", "district": "cite_akwaba", "name": "Cité Akwaba", "kind": "outdoor", "status": "published",
+      "source": { "type": "generator", "generator": "city" }
+    },
+    {
+      "id": "maison", "district": "cite_akwaba", "name": "Mon studio", "kind": "home", "status": "published",
+      "source": { "type": "generator", "generator": "studio" }
+    },
+    {
+      "id": "epicerie", "district": "cite_akwaba", "name": "Épicerie Chez Fofana", "kind": "interior", "status": "published",
+      "source": { "type": "generator", "generator": "epicerie" }
+    }
+  ],
+  "generated_interiors": {
+    "_doc": "Intérieurs générés à la volée : int_<bâtiment> (bâtiments de la ville sans intérieur dessiné), int_pb_<parcelle> (constructions des joueurs), int_home_<emplacement> (réservé). Le motif est celui que le serveur acceptait avant le catalogue.",
+    "district": "cite_akwaba",
+    "pattern": "^int_[A-Za-z0-9_]{1,40}$",
+    "source": { "type": "generator", "generator": "interior" }
+  },
+  "start_map": "maison"
+}

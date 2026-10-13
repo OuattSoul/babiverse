@@ -6,10 +6,11 @@ publique de ces règles via GET /api/config pour l'affichage et la prédiction l
 """
 
 import json
-import re
 from pathlib import Path
 
 from django.conf import settings
+
+from game import maps
 
 CONFIG_VERSION = 2
 
@@ -29,15 +30,19 @@ ADS = json.loads((SHARED / "ads.json").read_text(encoding="utf-8"))
 AD_PLACEMENTS = ADS["placements"]
 ADVERTS = ADS["adverts"]
 
-# Zones connues du serveur (la géométrie vit côté client, voir client/src/world/zones).
-ZONES = ("quartier", "maison", "epicerie")
+# Zones connues du serveur = cartes publiées du catalogue shared/maps.json (voir game/maps.py ; la géométrie
+# vit côté client, client/src/world/maps.js). Carte historique : ("quartier", "maison", "epicerie").
+ZONES = maps.published_ids()
 # Intérieurs des bâtiments de la ville (int_<bâtiment>, int_pb_<parcelle>), générés par le client.
-INTERIOR_ZONE_RE = re.compile(r"^int_[A-Za-z0-9_]{1,40}$")
+INTERIOR_ZONE_RE = maps.interior_pattern()
 
 
 def zone_known(zone):
-    return zone in ZONES or (isinstance(zone, str) and bool(INTERIOR_ZONE_RE.match(zone)))
-START_ZONE = "maison"
+    """Carte intégrée publiée, intérieur généré, ou carte publiée par l'atelier (pack de jeu en vigueur)."""
+    if zone in ZONES or (isinstance(zone, str) and bool(INTERIOR_ZONE_RE.match(zone))):
+        return True
+    return isinstance(zone, str) and zone in maps.atelier_maps()
+START_ZONE = maps.CATALOGUE["start_map"]  # "maison"
 
 TIME = {
     # Une journée virtuelle = 24 heures réelles, fuseau d'Abidjan (UTC+0).

@@ -73,6 +73,10 @@ export function buildGrid(zone, extra = []) {
   for (const r of extra) {
     for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) { solid[y * w + x] = 1; opaque[y * w + x] = 1; }
   }
+  // Emprises au sol des paysages 3D (cartes publiées par l'atelier) : infranchissables, sans cacher la vue.
+  for (const r of zone.blocked || []) {
+    for (let y = Math.max(0, r.y0); y <= Math.min(h - 1, r.y1); y++) for (let x = Math.max(0, r.x0); x <= Math.min(w - 1, r.x1); x++) solid[y * w + x] = 1;
+  }
   return { w, h, solid, opaque, indices, pxWidth: w * TILE, pxHeight: h * TILE };
 }
 

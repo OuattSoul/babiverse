@@ -5,8 +5,11 @@ la maison du joueur. Il est lu en direct sur l'atelier (`ATELIER_URL`, clé `ATE
 `ATELIER_CACHE_S` secondes), sinon dans le dernier fichier synchronisé (`ATELIER_PACK_FILE`). Le serveur ne
 s'en sert que pour valider l'apparence choisie à la création ; tout le rendu est côté client.
 """
+import hashlib
 import json
 import logging
+import os
+from collections import OrderedDict
 import re
 import threading
 import time
@@ -86,6 +89,81 @@ def current() -> dict | None:
 def reset_cache():
     with _lock:
         _cache.update(at=None, pack=None, source=None)
+        _models.clear()
+
+
+# ---------------------------------------------------------------- modèles 3D des cartes publiées par l'atelier
+
+MEDIA_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+MODEL_EXT = {"model/gltf-binary": "glb", "model/gltf+json": "gltf"}
+MODEL_CACHE_BYTES = 64 * 1024 * 1024
+_models: "OrderedDict[tuple[str, int], tuple[bytes, str]]" = OrderedDict()
+
+
+def published_models(pack: dict | None) -> dict:
+    """{(média, révision): description} des modèles utilisés par les cartes publiées du pack."""
+    out = {}
+    for m in (pack or {}).get("maps") or []:
+        for model in (m.get("models") or {}).values():
+            if isinstance(model, dict) and MEDIA_ID.match(str(model.get("media_id", ""))) and isinstance(model.get("revision"), int):
+                out[(model["media_id"], model["revision"])] = model
+    return out
+
+
+def models_dir() -> str:
+    return os.path.join(os.path.dirname(settings.ATELIER_PACK_FILE), "models")
+
+
+def model_path(model: dict) -> str:
+    return os.path.join(models_dir(), f"{model['media_id']}-{model['revision']}.{MODEL_EXT.get(model.get('mime'), 'glb')}")
+
+
+def fetch_model(model: dict, url: str | None = None, key: str | None = None, timeout: float = 15.0) -> bytes | None:
+    url = (url if url is not None else settings.ATELIER_URL).rstrip("/")
+    if not url:
+        return None
+    req = urllib.request.Request(f"{url}/api/runtime/models/{model['media_id']}/{model['revision']}",
+                                 headers={"X-Babiverse-Game-Key": key if key is not None else settings.ATELIER_KEY})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:  # noqa: S310 (URL de configuration)
+            return res.read()
+    except (urllib.error.URLError, OSError) as exc:
+        log.info("Modèle %s/%s injoignable : %s", model["media_id"], model["revision"], exc)
+        return None
+
+
+class ModelUnavailable(Exception):
+    """Modèle publié, mais fichier momentanément introuvable (atelier injoignable, fichier non synchronisé)."""
+
+
+def model_file(media_id: str, revision: int) -> tuple[bytes, str] | None:
+    """Fichier d'un modèle d'une carte publiée : cache mémoire, fichier synchronisé, ou atelier en direct.
+    Le contenu doit correspondre à l'empreinte annoncée par le pack (sinon refusé)."""
+    model = published_models(current()).get((media_id, revision))
+    if not model:
+        return None
+    key = (media_id, revision)
+    with _lock:
+        if key in _models:
+            _models.move_to_end(key)
+            return _models[key]
+    data = None
+    try:
+        with open(model_path(model), "rb") as f:
+            data = f.read()
+    except OSError:
+        data = fetch_model(model)
+    if data is None:
+        raise ModelUnavailable(f"{media_id}/{revision}")
+    if model.get("sha256") and hashlib.sha256(data).hexdigest() != model["sha256"]:
+        log.warning("Modèle %s/%s : empreinte différente de celle du pack, refusé", media_id, revision)
+        raise ModelUnavailable(f"{media_id}/{revision}")
+    item = (data, model.get("mime") or "model/gltf-binary")
+    with _lock:
+        _models[key] = item
+        while sum(len(v[0]) for v in _models.values()) > MODEL_CACHE_BYTES and len(_models) > 1:
+            _models.popitem(last=False)
+    return item
 
 
 # ---------------------------------------------------------------- apparence choisie à la création

@@ -30,6 +30,8 @@ PERMISSIONS = {
     "world.place": "Placer des objets dans les scènes de test",
     "world.edit_any": "Modifier les objets placés par d'autres",
     "scene.manage": "Créer, dupliquer et supprimer des scènes de test",
+    "world.manage": "Créer des villes, zones et cartes du jeu ; modifier leurs brouillons",
+    "world.publish": "Publier ou désactiver une carte du jeu",
     "admin.audit": "Consulter le journal d'audit",
     "admin.users": "Gérer les utilisateurs",
     "admin.settings": "Administrer les paramètres (catégories)",
@@ -39,10 +41,12 @@ ROLE_PERMISSIONS = {
     # Administrateur : tout
     "admin": set(PERMISSIONS),
     # Éditeur de contenu : crée et modifie des brouillons, les soumet, importe des fichiers
-    "editor": {"asset.read", "asset.create", "asset.edit", "asset.export", "media.upload", "world.place", "scene.manage"},
+    "editor": {"asset.read", "asset.create", "asset.edit", "asset.export", "media.upload", "world.place", "scene.manage",
+               "world.manage"},
     # Publieur : relit, valide, publie, archive, importe des lots
     "publisher": {"asset.read", "asset.validate", "asset.publish", "asset.archive", "asset.export", "asset.import",
-                  "media.upload", "media.manage", "world.place", "world.edit_any", "scene.manage", "admin.audit"},
+                  "media.upload", "media.manage", "world.place", "world.edit_any", "scene.manage", "admin.audit",
+                  "world.manage", "world.publish"},
     # Lecteur : consulte sans rien modifier
     "viewer": {"asset.read"},
     # Joueur : consulte le catalogue publié et place ses objets dans les scènes de test

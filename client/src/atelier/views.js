@@ -1,5 +1,5 @@
 // Vues d'un personnage de l'atelier : face (le SVG de l'atelier), dos et profil, composées à partir des mêmes
-// composants pour que le personnage se voie de tous les côtés quand il tourne (comme le modèle 3D).
+// composants, projetées sur le volume du personnage (engine3d/character.js) pour qu'il se voie de tous les côtés.
 // Module PUR : on transforme les composants (calques retirés, déplacés, écrasés en largeur) puis on réutilise
 // le compositeur de l'atelier (compose.js) sans le modifier.
 import { composeCharacter, REFERENCE_ANCHORS } from './compose.js';
@@ -114,7 +114,7 @@ function sideView(props, parts) {
   return composeCharacter(props, edited, { idPrefix: 's' }).svg;
 }
 
-/** { front, back, side } : SVG des trois vues (dos à afficher en miroir, profil tourné vers la droite). */
+/** { front, back, side } : SVG des trois vues (dos vu de derrière sans miroir, profil tourné vers la droite). */
 export function characterViews(props, parts) {
   return {
     front: composeCharacter(props, parts, { idPrefix: 'g' }).svg,
@@ -123,15 +123,3 @@ export function characterViews(props, parts) {
   };
 }
 
-/**
- * Vue à afficher : d = cap du personnage − direction de la caméra (radians, 0 = il regarde la caméra).
- * Retourne { view: 'front' | 'back' | 'side', mirror } (profil en miroir = tourné vers la gauche de l'écran) ;
- * `current` garde la vue en cours un peu au-delà de 45° pour éviter les clignotements.
- */
-export function pickView(d, current = null) {
-  const a = Math.abs(Math.atan2(Math.sin(d), Math.cos(d)));
-  const q = Math.PI / 4;
-  const inside = (v, m) => (v === 'front' ? a < q + m : v === 'back' ? a > 3 * q - m : a > q - m && a < 3 * q + m);
-  const view = current && inside(current, 0.1) ? current : ['front', 'back', 'side'].find((v) => inside(v, 0));
-  return { view, mirror: view === 'side' && Math.sin(d) < 0 };
-}
